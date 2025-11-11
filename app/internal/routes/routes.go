@@ -8,30 +8,29 @@ import (
 )
 
 func RegisterRoutes(mux *http.ServeMux, db *sql.DB) {
-	// Health check
-	mux.HandleFunc("/api/v1/health", handlers.HealthCheckHandler(db))
+	// ... existing users/health routes
 
-	// Users CRUD
-	usersHandler := handlers.NewUsersHandler(db)
-	mux.HandleFunc("/api/v1/users", func(w http.ResponseWriter, r *http.Request) {
+	rolesHandler := handlers.NewRolesHandler(db)
+
+	mux.HandleFunc("/api/v1/roles", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			usersHandler.ListUsers(w, r)
+			rolesHandler.ListRoles(w, r)
 		case http.MethodPost:
-			usersHandler.CreateUser(w, r)
+			rolesHandler.CreateRole(w, r)
 		default:
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
 	})
 
-	mux.HandleFunc("/api/v1/users/", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/v1/roles/", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			usersHandler.GetUser(w, r)
+			rolesHandler.GetRole(w, r)
 		case http.MethodPut:
-			usersHandler.UpdateUser(w, r)
+			rolesHandler.UpdateRole(w, r)
 		case http.MethodDelete:
-			usersHandler.DeleteUser(w, r)
+			rolesHandler.DeleteRole(w, r)
 		default:
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}

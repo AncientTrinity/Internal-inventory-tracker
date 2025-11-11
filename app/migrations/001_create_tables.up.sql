@@ -4,6 +4,7 @@
 CREATE TABLE roles (
   id SERIAL PRIMARY KEY,
   name TEXT NOT NULL UNIQUE -- admin, it, staff, agent, viewer
+  created_at TIMESTAMP NOT NULL DEFAULT now()
 );
 
 -- users
