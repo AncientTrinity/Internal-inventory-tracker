@@ -6,19 +6,22 @@ services:
     volumes:
       - ./app:/app
       - ./migrations:/migrations
-    command: go run ./cmd/web -port=8081 -db-dsn=postgres://user:password@postgres/mydb?sslmode=disable -cors-trusted-origins="http://localhost:8080"
+    env_file:
+      - .env                # <-- load environment variables
+    command: go run ./cmd/api -port=$PORT -db-dsn=$DB_DSN -cors-trusted-origins=$CORS_TRUSTED_ORIGINS
     ports:
       - "8081:8081"
     networks:
       - backend
     depends_on:
       - postgres
+      - mailpit
 
   apache:
     image: httpd:latest
     container_name: apache-server
     ports:
-      - "8080:80"          # access Apache from host at http://localhost:8080
+      - "8080:80"
     volumes:
       - ./html:/usr/local/apache2/htdocs
     networks:
@@ -44,6 +47,8 @@ services:
     working_dir: /migrations
     volumes:
       - ./app/migrations:/migrations
+    env_file:
+      - .env                  # <-- use same environment for migrations
     networks:
       - backend
     depends_on:
@@ -51,9 +56,20 @@ services:
     entrypoint: [
       "migrate",
       "-path", "/migrations",
-      "-database", "postgres://user:password@postgres/mydb?sslmode=disable"
+      "-database", "$DB_DSN"
     ]
     command: ["up"]
+
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: mailpit
+    ports:
+      - "1025:1025"  # SMTP
+      - "8025:8025"  # Web UI
+    networks:
+      - backend
+    restart: unless-stopped
+
 volumes:
   db_data:
 
