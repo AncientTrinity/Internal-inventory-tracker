@@ -1,14 +1,15 @@
 package routes
 
 import (
-    "net/http"
+	"database/sql"
+	"net/http"
 
-    "victortillett.net/internal-inventory-tracker/internal/handlers"
+	"victortillett.net/internal-inventory-tracker/internal/handlers"
 )
 
-func RegisterRoutes(mux *http.ServeMux) {
-    // Health check
-    mux.HandleFunc("/api/v1/health", handlers.HealthCheckHandler)
+func RegisterRoutes(mux *http.ServeMux, db *sql.DB) {
+	// Health check
+	mux.HandleFunc("/api/v1/health", handlers.HealthCheckHandler(db))
 
     // Auth
     //mux.HandleFunc("/api/v1/auth/login", handlers.LoginHandler)

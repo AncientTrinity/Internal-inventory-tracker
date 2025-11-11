@@ -1,34 +1,49 @@
 package main
 
 import (
-    "fmt"
-    "log"
-    "net/http"
-    "os"
-    "time"
+	"context"
+	"fmt"
+	"log"
+	"net/http" 
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
-    "victortillett.net/internal-inventory-tracker/internal/routes"
+	"victortillett.net/internal-inventory-tracker/internal/db"
+	"victortillett.net/internal-inventory-tracker/internal/server"
 )
 
 func main() {
-    port := os.Getenv("PORT")
-    if port == "" {
-        port = "8081"
-    }
+	// Connect to DB
+	database := db.ConnectDB()
+	defer database.Close()
 
-    mux := http.NewServeMux()
+	// Start server
+	srv := server.NewServer(database)
 
-    // Register all routes
-    routes.RegisterRoutes(mux)
+	// Run server in a goroutine
+	go func() {
+		fmt.Printf("Starting server on %s...\n", srv.Addr)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Server error: %v", err)
+		}
+	}()
 
-    srv := &http.Server{
-        Addr:         ":" + port,
-        Handler:      mux,
-        ReadTimeout:  10 * time.Second,
-        WriteTimeout: 10 * time.Second,
-        IdleTimeout:  120 * time.Second,
-    }
+	// Graceful shutdown
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 
-    fmt.Printf("Starting server on port %s...\n", port)
-    log.Fatal(srv.ListenAndServe())
+	<-stop // Wait for interrupt
+
+	fmt.Println("\nShutting down server...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Fatalf("Server shutdown failed: %v", err)
+	}
+
+	fmt.Println("Server stopped gracefully")
 }
