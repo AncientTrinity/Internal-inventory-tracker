@@ -2,9 +2,9 @@ services:
   go:
     image: golang:1.25.0
     container_name: go-app
-    working_dir: /ws-main
+    working_dir: /app
     volumes:
-      - ./ws-main:/ws-main
+      - ./app:/app
       - ./migrations:/migrations
     command: go run ./cmd/web -port=8081 -db-dsn=postgres://user:password@postgres/mydb?sslmode=disable -cors-trusted-origins="http://localhost:8080"
     ports:
