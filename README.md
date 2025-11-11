@@ -1,1 +1,1 @@
-Put the read me here
+This repository is when i will put all the files needed for user.go it doesnt have authentication as of yet as it is just for testing
