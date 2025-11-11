@@ -1,0 +1,61 @@
+services:
+  go:
+    image: golang:1.25.0
+    container_name: go-app
+    working_dir: /ws-main
+    volumes:
+      - ./ws-main:/ws-main
+      - ./migrations:/migrations
+    command: go run ./cmd/web -port=8081 -db-dsn=postgres://user:password@postgres/mydb?sslmode=disable -cors-trusted-origins="http://localhost:8080"
+    ports:
+      - "8081:8081"
+    networks:
+      - backend
+    depends_on:
+      - postgres
+
+  apache:
+    image: httpd:latest
+    container_name: apache-server
+    ports:
+      - "8080:80"          # access Apache from host at http://localhost:8080
+    volumes:
+      - ./html:/usr/local/apache2/htdocs
+    networks:
+      - backend
+
+  postgres:
+    image: postgres:17
+    container_name: postgres-db
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: mydb
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    networks:
+      - backend
+
+  migrate:
+    image: migrate/migrate
+    container_name: migrate
+    working_dir: /migrations
+    volumes:
+      - ./app/migrations:/migrations
+    networks:
+      - backend
+    depends_on:
+      - postgres
+    entrypoint: [
+      "migrate",
+      "-path", "/migrations",
+      "-database", "postgres://user:password@postgres/mydb?sslmode=disable"
+    ]
+    command: ["up"]
+volumes:
+  db_data:
+
+networks:
+  backend:
