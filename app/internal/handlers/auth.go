@@ -17,20 +17,17 @@ type Credentials struct {
 	Password string `json:"password"`
 }
 
-func (a *applicationDependencies) serverErrorResponse(w http.ResponseWriter, r *http.Request, err error) {
+func (a *ApplicationDependencies) serverErrorResponse(w http.ResponseWriter, r *http.Request, err error) {
 	http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 }
 
-
 // POST /api/v1/login
-func (a *applicationDependencies) LoginHandler(w http.ResponseWriter, r *http.Request) {
+func (a *ApplicationDependencies) LoginHandler(w http.ResponseWriter, r *http.Request) {
 	var creds Credentials
 	if err := json.NewDecoder(r.Body).Decode(&creds); err != nil {
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
-
-	
 
 	// Query user by email
 	row := a.DB.QueryRow(`SELECT id, password, role_id FROM users WHERE email = $1`, creds.Email)
