@@ -46,10 +46,12 @@ If not, you’ll get:
 }
 
 
-# Need to be imlemented 
+# Need to be implemented 
 
-later on when i am at the mailing part i would like all users From admin to viewer to be authenticated via a token that would be used to access the application
-Admins - Full admin rights to Create view Update and Delete- Tickets, Assets, Users 
+Later on, when I am at the mailing part, i would like all users From admin to viewer to be authenticated via a token that would be used to access the application
+
+
+Admins - Full admin rights to Create, view, Update and Delete- Tickets, Assets, Users 
 Owner 
 Management 
 Hr 
