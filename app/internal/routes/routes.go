@@ -9,8 +9,8 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-// SetupRoutes sets up all routes using chi.Router
-func SetupRoutes(
+// RegisterRoutes sets up all routes using chi.Router
+func RegisterRoutes(
 	usersHandler *handlers.UsersHandler,
 	rolesHandler *handlers.RolesHandler,
 	//assetsHandler *handlers.AssetsHandler,
@@ -29,6 +29,7 @@ func SetupRoutes(
 
 	r.Post("/api/v1/login", authHandler.Login)
 	r.Post("/api/v1/refresh", authHandler.RefreshToken)
+
 
 	// -----------------------
 	// Protected routes
