@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"victortillett.net/internal-inventory-tracker/internal/routes"
+	"victortillett.net/internal-inventory-tracker/internal/handlers"
 )
 
 func NewServer(db *sql.DB) *http.Server {

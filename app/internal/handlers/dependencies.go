@@ -5,7 +5,8 @@ import (
 	"victortillett.net/internal-inventory-tracker/internal/config"
 )
 
-type applicationDependencies struct {
+// ApplicationDependencies holds all shared app dependencies.
+type ApplicationDependencies struct {
 	DB     *sql.DB
-	Config config.Config
+	Config *config.Config
 }
