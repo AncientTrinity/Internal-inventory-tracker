@@ -9,51 +9,87 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-func SetupRoutes(app *handlers.ApplicationDependencies) http.Handler {
+// SetupRoutes sets up all routes using chi.Router
+func SetupRoutes(
+	usersHandler *handlers.UsersHandler,
+	rolesHandler *handlers.RolesHandler,
+	//assetsHandler *handlers.AssetsHandler,
+	//ticketsHandler *handlers.TicketsHandler,
+	authHandler *handlers.AuthHandler,
+) http.Handler {
 	r := chi.NewRouter()
 
+	// -----------------------
 	// Public routes
-	r.Get("/api/v1/healthcheck", app.HealthcheckHandler)
-	r.Post("/api/v1/login", app.LoginHandler)
+	// -----------------------
+	r.Get("/api/v1/healthcheck", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"ok"}`))
+	})
 
+	r.Post("/api/v1/login", authHandler.Login)
+	r.Post("/api/v1/refresh", authHandler.RefreshToken)
+
+	// -----------------------
 	// Protected routes
+	// -----------------------
 	r.Group(func(protected chi.Router) {
 		protected.Use(middleware.AuthMiddleware)
 
+		// Users
 		protected.Route("/api/v1/users", func(r chi.Router) {
-			r.Get("/", app.GetUsersHandler)
-			r.Post("/", app.CreateUserHandler)
+			r.Get("/", usersHandler.ListUsers)
+			r.Post("/", usersHandler.CreateUser)
+			// Example future routes:
+			// r.Route("/{id}", func(r chi.Router) {
+			//     r.Get("/", usersHandler.GetUserByID)
+			//     r.Put("/", usersHandler.UpdateUser)
+			//     r.Delete("/", usersHandler.DeleteUser)
+			// })
 		})
 
+		// Roles
 		protected.Route("/api/v1/roles", func(r chi.Router) {
-			r.Get("/", app.GetRolesHandler)
-			r.Post("/", middleware.RequireRole(1, http.HandlerFunc(app.CreateRoleHandler)).ServeHTTP)
+			r.Get("/", rolesHandler.ListRoles)
+			r.Post("/", rolesHandler.CreateRole)
+			// Future routes:
+			// r.Route("/{id}", func(r chi.Router) {
+			//     r.Get("/", rolesHandler.GetRole)
+			//     r.Put("/", rolesHandler.UpdateRole)
+			//     r.Delete("/", rolesHandler.DeleteRole)
+			// })
 		})
-	})
+
+		// Assets
+		//protected.Route("/api/v1/assets", func(r chi.Router) {
+			//r.Get("/", assetsHandler.ListAssets)
+			//r.Post("/", assetsHandler.CreateAsset)
+			// Future routes:
+			// r.Route("/{id}", func(r chi.Router) {
+			//     r.Get("/", assetsHandler.GetAsset)
+			//     r.Put("/", assetsHandler.UpdateAsset)
+			//     r.Delete("/", assetsHandler.DeleteAsset)
+			// })
+			// r.Get("/search", assetsHandler.SearchAssets)
+			// r.Post("/logs", assetsHandler.AssetLogs)
+		})
+
+		// Tickets
+		//protected.Route("/api/v1/tickets", func(r chi.Router) {
+			//r.Get("/", ticketsHandler.ListTickets)
+			//r.Post("/", ticketsHandler.CreateTicket)
+			// Future routes:
+			// r.Route("/{id}", func(r chi.Router) {
+			//     r.Get("/", ticketsHandler.GetTicket)
+			//     r.Put("/", ticketsHandler.UpdateTicket)
+			// })
+			// r.Post("/{id}/comments", ticketsHandler.AddComment)
+			// r.Get("/{id}/comments", ticketsHandler.ListComments)
+		//})
+
+		// Quick linking helpers
+		// r.Get("/api/v1/agents/{id}/assets", assetsHandler.AgentAssets)
+	//}) 
 
 	return r
-
-
-
-    // Auth
-    //mux.HandleFunc("/api/v1/auth/login", handlers.LoginHandler)
-    //mux.HandleFunc("/api/v1/auth/refresh", handlers.RefreshTokenHandler)
-
-    // Users (admins only)
-    //mux.HandleFunc("/api/v1/users", handlers.UsersHandler)             // GET list, POST create
-    //mux.HandleFunc("/api/v1/users/", handlers.UserByIDHandler)         // GET/PUT/DELETE by ID
-
-    // Assets
-    //mux.HandleFunc("/api/v1/assets", handlers.AssetsHandler)           // GET list, POST create
-    //mux.HandleFunc("/api/v1/assets/", handlers.AssetByIDHandler)       // GET/PUT/DELETE by ID
-    //mux.HandleFunc("/api/v1/assets/", handlers.AssetLogsHandler)       // POST / GET logs
-
-    // Tickets
-    //mux.HandleFunc("/api/v1/tickets", handlers.TicketsHandler)         // GET list, POST create
-    //mux.HandleFunc("/api/v1/tickets/", handlers.TicketByIDHandler)     // GET/PUT ticket
-    //mux.HandleFunc("/api/v1/tickets/", handlers.TicketCommentsHandler) // POST/GET comments
-
-    // Quick linking helpers
-    //mux.HandleFunc("/api/v1/agents/", handlers.AgentAssetsHandler)     // GET assets for agent
-    //mux.HandleFunc("/api/v1/assets/search", handlers.AssetSearchHandler) // GET search by internal_id
 }
