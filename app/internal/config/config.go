@@ -1,0 +1,33 @@
+package config
+
+import "os"
+
+type Config struct {
+	Port               string
+	DB_DSN             string
+	JWTSecret          string
+	CORSTrustedOrigins string
+	SMTPHost           string
+	SMTPPort           string
+	SMTPFrom           string
+}
+
+// LoadConfig loads environment variables into a Config struct
+func LoadConfig() Config {
+	return Config{
+		Port:               getEnv("PORT", "8081"),
+		DB_DSN:             getEnv("DB_DSN", "postgres://user:password@postgres/mydb?sslmode=disable"),
+		JWTSecret:          getEnv("JWT_SECRET", "supersecretjwtkey"),
+		CORSTrustedOrigins: getEnv("CORS_TRUSTED_ORIGINS", "http://localhost:8080"),
+		SMTPHost:           getEnv("SMTP_HOST", "mailpit"),
+		SMTPPort:           getEnv("SMTP_PORT", "1025"),
+		SMTPFrom:           getEnv("SMTP_FROM", "noreply@example.com"),
+	}
+}
+
+func getEnv(key, fallback string) string {
+	if value, exists := os.LookupEnv(key); exists {
+		return value
+	}
+	return fallback
+}

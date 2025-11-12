@@ -1,40 +1,39 @@
 package routes
 
 import (
-	"database/sql"
 	"net/http"
 
 	"victortillett.net/internal-inventory-tracker/internal/handlers"
+	"victortillett.net/internal-inventory-tracker/internal/middleware"
+
+	"github.com/go-chi/chi/v5"
 )
 
-func RegisterRoutes(mux *http.ServeMux, db *sql.DB) {
-	// ... existing users/health routes
+func SetupRoutes(app *handlers.ApplicationDependencies) http.Handler {
+	r := chi.NewRouter()
 
-	rolesHandler := handlers.NewRolesHandler(db)
+	// Public routes
+	r.Get("/api/v1/healthcheck", app.HealthcheckHandler)
+	r.Post("/api/v1/login", app.LoginHandler)
 
-	mux.HandleFunc("/api/v1/roles", func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodGet:
-			rolesHandler.ListRoles(w, r)
-		case http.MethodPost:
-			rolesHandler.CreateRole(w, r)
-		default:
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		}
+	// Protected routes
+	r.Group(func(protected chi.Router) {
+		protected.Use(middleware.AuthMiddleware)
+
+		protected.Route("/api/v1/users", func(r chi.Router) {
+			r.Get("/", app.GetUsersHandler)
+			r.Post("/", app.CreateUserHandler)
+		})
+
+		protected.Route("/api/v1/roles", func(r chi.Router) {
+			r.Get("/", app.GetRolesHandler)
+			r.Post("/", middleware.RequireRole(1, http.HandlerFunc(app.CreateRoleHandler)).ServeHTTP)
+		})
 	})
 
-	mux.HandleFunc("/api/v1/roles/", func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodGet:
-			rolesHandler.GetRole(w, r)
-		case http.MethodPut:
-			rolesHandler.UpdateRole(w, r)
-		case http.MethodDelete:
-			rolesHandler.DeleteRole(w, r)
-		default:
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		}
-	})
+	return r
+
+
 
     // Auth
     //mux.HandleFunc("/api/v1/auth/login", handlers.LoginHandler)
