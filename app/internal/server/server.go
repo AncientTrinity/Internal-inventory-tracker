@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 
+	"victortillett.net/internal-inventory-tracker/internal/handlers"
 	"victortillett.net/internal-inventory-tracker/internal/routes"
 )
 
@@ -15,12 +16,17 @@ func NewServer(db *sql.DB) *http.Server {
 		port = "8081"
 	}
 
-	mux := http.NewServeMux()
-	routes.RegisterRoutes(mux, db)
+	// Initialize handlers
+	usersHandler := handlers.NewUsersHandler(db)
+	rolesHandler := handlers.NewRolesHandler(db)
+	authHandler := handlers.NewAuthHandler(db)
+
+	// Register routes using handlers
+	router := routes.RegisterRoutes(usersHandler, rolesHandler, authHandler)
 
 	return &http.Server{
 		Addr:         ":" + port,
-		Handler:      mux,
+		Handler:      router,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  120 * time.Second,

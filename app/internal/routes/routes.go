@@ -1,60 +1,96 @@
 package routes
 
 import (
-	"database/sql"
 	"net/http"
 
 	"victortillett.net/internal-inventory-tracker/internal/handlers"
+	"victortillett.net/internal-inventory-tracker/internal/middleware"
+
+	"github.com/go-chi/chi/v5"
 )
 
-func RegisterRoutes(mux *http.ServeMux, db *sql.DB) {
-	// ... existing users/health routes
+// RegisterRoutes sets up all routes using chi.Router
+func RegisterRoutes(
+	usersHandler *handlers.UsersHandler,
+	rolesHandler *handlers.RolesHandler,
+	//assetsHandler *handlers.AssetsHandler,
+	//ticketsHandler *handlers.TicketsHandler,
+	authHandler *handlers.AuthHandler,
+) http.Handler {
+	r := chi.NewRouter()
 
-	rolesHandler := handlers.NewRolesHandler(db)
-
-	mux.HandleFunc("/api/v1/roles", func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodGet:
-			rolesHandler.ListRoles(w, r)
-		case http.MethodPost:
-			rolesHandler.CreateRole(w, r)
-		default:
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		}
+	// -----------------------
+	// Public routes
+	// -----------------------
+	r.Get("/api/v1/healthcheck", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"ok"}`))
 	})
 
-	mux.HandleFunc("/api/v1/roles/", func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodGet:
-			rolesHandler.GetRole(w, r)
-		case http.MethodPut:
-			rolesHandler.UpdateRole(w, r)
-		case http.MethodDelete:
-			rolesHandler.DeleteRole(w, r)
-		default:
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		}
-	})
+	r.Post("/api/v1/login", authHandler.Login)
+	r.Post("/api/v1/refresh", authHandler.RefreshToken)
 
-    // Auth
-    //mux.HandleFunc("/api/v1/auth/login", handlers.LoginHandler)
-    //mux.HandleFunc("/api/v1/auth/refresh", handlers.RefreshTokenHandler)
 
-    // Users (admins only)
-    //mux.HandleFunc("/api/v1/users", handlers.UsersHandler)             // GET list, POST create
-    //mux.HandleFunc("/api/v1/users/", handlers.UserByIDHandler)         // GET/PUT/DELETE by ID
+	// -----------------------
+	// Protected routes
+	// -----------------------
+	r.Group(func(protected chi.Router) {
+		protected.Use(middleware.AuthMiddleware)
 
-    // Assets
-    //mux.HandleFunc("/api/v1/assets", handlers.AssetsHandler)           // GET list, POST create
-    //mux.HandleFunc("/api/v1/assets/", handlers.AssetByIDHandler)       // GET/PUT/DELETE by ID
-    //mux.HandleFunc("/api/v1/assets/", handlers.AssetLogsHandler)       // POST / GET logs
+		// Users
+		protected.Route("/api/v1/users", func(r chi.Router) {
+			r.Get("/", usersHandler.ListUsers)
+			r.Post("/", usersHandler.CreateUser)
+			// Example future routes:
+			// r.Route("/{id}", func(r chi.Router) {
+			//     r.Get("/", usersHandler.GetUserByID)
+			//     r.Put("/", usersHandler.UpdateUser)
+			//     r.Delete("/", usersHandler.DeleteUser)
+			// })
+		})
 
-    // Tickets
-    //mux.HandleFunc("/api/v1/tickets", handlers.TicketsHandler)         // GET list, POST create
-    //mux.HandleFunc("/api/v1/tickets/", handlers.TicketByIDHandler)     // GET/PUT ticket
-    //mux.HandleFunc("/api/v1/tickets/", handlers.TicketCommentsHandler) // POST/GET comments
+		// Roles
+		protected.Route("/api/v1/roles", func(r chi.Router) {
+			r.Get("/", rolesHandler.ListRoles)
+			r.Post("/", rolesHandler.CreateRole)
+			// Future routes:
+			// r.Route("/{id}", func(r chi.Router) {
+			//     r.Get("/", rolesHandler.GetRole)
+			//     r.Put("/", rolesHandler.UpdateRole)
+			//     r.Delete("/", rolesHandler.DeleteRole)
+			// })
+		})
 
-    // Quick linking helpers
-    //mux.HandleFunc("/api/v1/agents/", handlers.AgentAssetsHandler)     // GET assets for agent
-    //mux.HandleFunc("/api/v1/assets/search", handlers.AssetSearchHandler) // GET search by internal_id
+		// Assets
+		//protected.Route("/api/v1/assets", func(r chi.Router) {
+			//r.Get("/", assetsHandler.ListAssets)
+			//r.Post("/", assetsHandler.CreateAsset)
+			// Future routes:
+			// r.Route("/{id}", func(r chi.Router) {
+			//     r.Get("/", assetsHandler.GetAsset)
+			//     r.Put("/", assetsHandler.UpdateAsset)
+			//     r.Delete("/", assetsHandler.DeleteAsset)
+			// })
+			// r.Get("/search", assetsHandler.SearchAssets)
+			// r.Post("/logs", assetsHandler.AssetLogs)
+		})
+
+		// Tickets
+		//protected.Route("/api/v1/tickets", func(r chi.Router) {
+			//r.Get("/", ticketsHandler.ListTickets)
+			//r.Post("/", ticketsHandler.CreateTicket)
+			// Future routes:
+			// r.Route("/{id}", func(r chi.Router) {
+			//     r.Get("/", ticketsHandler.GetTicket)
+			//     r.Put("/", ticketsHandler.UpdateTicket)
+			// })
+			// r.Post("/{id}/comments", ticketsHandler.AddComment)
+			// r.Get("/{id}/comments", ticketsHandler.ListComments)
+		//})
+
+		// Quick linking helpers
+		// r.Get("/api/v1/agents/{id}/assets", assetsHandler.AgentAssets)
+	//}) 
+
+	return r
 }
