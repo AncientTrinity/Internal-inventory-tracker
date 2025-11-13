@@ -8,7 +8,7 @@ login using the test admin  to generate token
 curl -X POST http://localhost:8081/api/v1/login   -H "Content-Type: application/json"   -d '{"email":"admin@example.com","password":"admin123"}'
 
 
-TOKEN=" Enter generated token here "
+TOKEN=$"Enter generated token here "
 
 # Test getting all users
 echo "=== Testing Users Endpoint ==="
