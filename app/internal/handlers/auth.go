@@ -10,17 +10,15 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// Secret key (in production, load this from environment variable)
-var jwtSecret = []byte("supersecretkey123")
-
 // AuthHandler handles authentication routes
 type AuthHandler struct {
-	DB *sql.DB
+	DB        *sql.DB
+	JWTSecret string
 }
 
-// NewAuthHandler creates a new AuthHandler
-func NewAuthHandler(db *sql.DB) *AuthHandler {
-	return &AuthHandler{DB: db}
+// NewAuthHandler creates a new AuthHandler with config
+func NewAuthHandler(db *sql.DB, jwtSecret string) *AuthHandler {
+	return &AuthHandler{DB: db, JWTSecret: jwtSecret}
 }
 
 // Credentials struct for login input
@@ -41,7 +39,13 @@ type Claims struct {
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	var creds Credentials
 	if err := json.NewDecoder(r.Body).Decode(&creds); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		h.errorResponse(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Validate input
+	if creds.Email == "" || creds.Password == "" {
+		h.errorResponse(w, "Email and password are required", http.StatusBadRequest)
 		return
 	}
 
@@ -49,21 +53,27 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	var userID int
 	var hashedPassword string
 	var roleID int
-	err := h.DB.QueryRow(`SELECT id, password, role_id FROM users WHERE email = $1`, creds.Email).
-		Scan(&userID, &hashedPassword, &roleID)
+	err := h.DB.QueryRow(`
+		SELECT id, password, role_id FROM users WHERE email = $1
+	`, creds.Email).Scan(&userID, &hashedPassword, &roleID)
+	
 	if err != nil {
-		http.Error(w, "Invalid email or password", http.StatusUnauthorized)
+		if err == sql.ErrNoRows {
+			h.errorResponse(w, "Invalid email or password", http.StatusUnauthorized)
+			return
+		}
+		h.errorResponse(w, "Database error", http.StatusInternalServerError)
 		return
 	}
 
 	// Compare password
 	if err := bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(creds.Password)); err != nil {
-		http.Error(w, "Invalid email or password", http.StatusUnauthorized)
+		h.errorResponse(w, "Invalid email or password", http.StatusUnauthorized)
 		return
 	}
 
 	// Create JWT claims
-	expirationTime := time.Now().Add(1 * time.Hour)
+	expirationTime := time.Now().Add(24 * time.Hour) // Extended to 24 hours for better UX
 	claims := &Claims{
 		UserID: userID,
 		RoleID: roleID,
@@ -71,19 +81,26 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expirationTime),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			Issuer:    "internal-inventory-tracker",
 		},
 	}
 
 	// Create token
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	tokenString, err := token.SignedString(jwtSecret)
+	tokenString, err := token.SignedString([]byte(h.JWTSecret))
 	if err != nil {
-		http.Error(w, "Could not create token", http.StatusInternalServerError)
+		h.errorResponse(w, "Could not create token", http.StatusInternalServerError)
 		return
 	}
 
 	// Return token
-	json.NewEncoder(w).Encode(map[string]string{"token": tokenString})
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"token":      tokenString,
+		"expires_at": expirationTime,
+		"user_id":    userID,
+		"role_id":    roleID,
+	})
 }
 
 // RefreshToken endpoint
@@ -92,33 +109,55 @@ func (h *AuthHandler) RefreshToken(w http.ResponseWriter, r *http.Request) {
 		Token string `json:"token"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		h.errorResponse(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
+	// Parse token without validation to get claims
 	token, err := jwt.ParseWithClaims(body.Token, &Claims{}, func(token *jwt.Token) (interface{}, error) {
-		return jwtSecret, nil
+		return []byte(h.JWTSecret), nil
 	})
 	if err != nil || !token.Valid {
-		http.Error(w, "Invalid token", http.StatusUnauthorized)
+		h.errorResponse(w, "Invalid token", http.StatusUnauthorized)
 		return
 	}
 
 	claims, ok := token.Claims.(*Claims)
 	if !ok {
-		http.Error(w, "Invalid claims", http.StatusUnauthorized)
+		h.errorResponse(w, "Invalid claims", http.StatusUnauthorized)
 		return
 	}
 
-	// Create new token
-	expirationTime := time.Now().Add(1 * time.Hour)
+	// Verify user still exists and is active
+	var userExists bool
+	err = h.DB.QueryRow(`SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)`, claims.UserID).Scan(&userExists)
+	if err != nil || !userExists {
+		h.errorResponse(w, "User no longer exists", http.StatusUnauthorized)
+		return
+	}
+
+	// Create new token with extended expiration
+	expirationTime := time.Now().Add(24 * time.Hour)
 	claims.ExpiresAt = jwt.NewNumericDate(expirationTime)
+	claims.IssuedAt = jwt.NewNumericDate(time.Now())
+	
 	newToken := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	newTokenString, err := newToken.SignedString(jwtSecret)
+	newTokenString, err := newToken.SignedString([]byte(h.JWTSecret))
 	if err != nil {
-		http.Error(w, "Could not refresh token", http.StatusInternalServerError)
+		h.errorResponse(w, "Could not refresh token", http.StatusInternalServerError)
 		return
 	}
 
-	json.NewEncoder(w).Encode(map[string]string{"token": newTokenString})
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"token":      newTokenString,
+		"expires_at": expirationTime,
+	})
+}
+
+// Helper method for consistent error responses
+func (h *AuthHandler) errorResponse(w http.ResponseWriter, message string, status int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(map[string]string{"error": message})
 }

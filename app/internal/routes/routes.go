@@ -16,6 +16,7 @@ func RegisterRoutes(
 	//assetsHandler *handlers.AssetsHandler,
 	//ticketsHandler *handlers.TicketsHandler,
 	authHandler *handlers.AuthHandler,
+	jwtSecret string, // Add JWT secret parameter
 ) http.Handler {
 	r := chi.NewRouter()
 
@@ -30,67 +31,63 @@ func RegisterRoutes(
 	r.Post("/api/v1/login", authHandler.Login)
 	r.Post("/api/v1/refresh", authHandler.RefreshToken)
 
-
 	// -----------------------
 	// Protected routes
 	// -----------------------
 	r.Group(func(protected chi.Router) {
-		protected.Use(middleware.AuthMiddleware)
+		// Pass JWT secret to the middleware
+		protected.Use(middleware.AuthMiddleware(jwtSecret))
 
 		// Users
 		protected.Route("/api/v1/users", func(r chi.Router) {
 			r.Get("/", usersHandler.ListUsers)
 			r.Post("/", usersHandler.CreateUser)
-			// Example future routes:
-			// r.Route("/{id}", func(r chi.Router) {
-			//     r.Get("/", usersHandler.GetUserByID)
-			//     r.Put("/", usersHandler.UpdateUser)
-			//     r.Delete("/", usersHandler.DeleteUser)
-			// })
+			r.Route("/{id}", func(r chi.Router) {
+				r.Get("/", usersHandler.GetUser)
+				r.Put("/", usersHandler.UpdateUser)
+				r.Delete("/", usersHandler.DeleteUser)
+			})
 		})
 
 		// Roles
 		protected.Route("/api/v1/roles", func(r chi.Router) {
 			r.Get("/", rolesHandler.ListRoles)
 			r.Post("/", rolesHandler.CreateRole)
-			// Future routes:
-			// r.Route("/{id}", func(r chi.Router) {
-			//     r.Get("/", rolesHandler.GetRole)
-			//     r.Put("/", rolesHandler.UpdateRole)
-			//     r.Delete("/", rolesHandler.DeleteRole)
-			// })
+			r.Route("/{id}", func(r chi.Router) {
+				r.Get("/", rolesHandler.GetRole)
+				r.Put("/", rolesHandler.UpdateRole)
+				r.Delete("/", rolesHandler.DeleteRole)
+			})
 		})
 
-		// Assets
-		//protected.Route("/api/v1/assets", func(r chi.Router) {
-			//r.Get("/", assetsHandler.ListAssets)
-			//r.Post("/", assetsHandler.CreateAsset)
-			// Future routes:
-			// r.Route("/{id}", func(r chi.Router) {
-			//     r.Get("/", assetsHandler.GetAsset)
-			//     r.Put("/", assetsHandler.UpdateAsset)
-			//     r.Delete("/", assetsHandler.DeleteAsset)
-			// })
-			// r.Get("/search", assetsHandler.SearchAssets)
-			// r.Post("/logs", assetsHandler.AssetLogs)
-		})
+		// Assets (commented out for now)
+		// protected.Route("/api/v1/assets", func(r chi.Router) {
+		// 	r.Get("/", assetsHandler.ListAssets)
+		// 	r.Post("/", assetsHandler.CreateAsset)
+		// 	r.Route("/{id}", func(r chi.Router) {
+		// 		r.Get("/", assetsHandler.GetAsset)
+		// 		r.Put("/", assetsHandler.UpdateAsset)
+		// 		r.Delete("/", assetsHandler.DeleteAsset)
+		// 	})
+		// 	r.Get("/search", assetsHandler.SearchAssets)
+		// 	r.Post("/{id}/logs", assetsHandler.AssetLogs)
+		// })
 
-		// Tickets
-		//protected.Route("/api/v1/tickets", func(r chi.Router) {
-			//r.Get("/", ticketsHandler.ListTickets)
-			//r.Post("/", ticketsHandler.CreateTicket)
-			// Future routes:
-			// r.Route("/{id}", func(r chi.Router) {
-			//     r.Get("/", ticketsHandler.GetTicket)
-			//     r.Put("/", ticketsHandler.UpdateTicket)
-			// })
-			// r.Post("/{id}/comments", ticketsHandler.AddComment)
-			// r.Get("/{id}/comments", ticketsHandler.ListComments)
-		//})
+		// Tickets (commented out for now)
+		// protected.Route("/api/v1/tickets", func(r chi.Router) {
+		// 	r.Get("/", ticketsHandler.ListTickets)
+		// 	r.Post("/", ticketsHandler.CreateTicket)
+		// 	r.Route("/{id}", func(r chi.Router) {
+		// 		r.Get("/", ticketsHandler.GetTicket)
+		// 		r.Put("/", ticketsHandler.UpdateTicket)
+		// 	})
+		// 	r.Post("/{id}/comments", ticketsHandler.AddComment)
+		// 	r.Get("/{id}/comments", ticketsHandler.ListComments)
+		// })
 
 		// Quick linking helpers
 		// r.Get("/api/v1/agents/{id}/assets", assetsHandler.AgentAssets)
-	//}) 
+	})
 
 	return r
 }

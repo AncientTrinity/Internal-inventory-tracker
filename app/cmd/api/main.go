@@ -12,15 +12,19 @@ import (
 
 	"victortillett.net/internal-inventory-tracker/internal/db"
 	"victortillett.net/internal-inventory-tracker/internal/server"
+	"victortillett.net/internal-inventory-tracker/internal/config"
 )
 
 func main() {
+	// Load configuration
+	cfg := config.LoadConfig()
+
 	// Connect to the database
 	database := db.ConnectDB()
 	defer database.Close()
 
-	// Create the HTTP server (handlers + routes are built inside)
-	srv := server.NewServer(database)
+	// Create the HTTP server with config
+	srv := server.NewServer(database, &cfg)
 
 	// Run the server in a goroutine
 	go func() {
