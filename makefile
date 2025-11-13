@@ -4,22 +4,6 @@ run/api:
 	@echo '-- Running application --'
 	@docker compose exec go run ./cmd/api -port=8081 -db-dsn=postgres://user:password@postgres/mydb?sslmode=disable -cors-trusted-origins="http://localhost:8080"
 
-## generate-password: generate bcrypt hash for admin password
-.PHONY: generate-password
-generate-password:
-	@echo "Generating bcrypt hash for password 'admin123'..."
-	@docker compose exec go sh -c 'cat > /tmp/generate_hash.go << "EOF"
-package main
-import (
-	"fmt"
-	"golang.org/x/crypto/bcrypt"
-)
-func main() {
-	hash, _ := bcrypt.GenerateFromPassword([]byte("admin123"), bcrypt.DefaultCost)
-	fmt.Println(string(hash))
-}
-EOF
-	go run /tmp/generate_hash.go'
 ## db/seed: generate password and update seed file
 .PHONY: db/seed
 db/seed:

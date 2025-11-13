@@ -3,11 +3,13 @@ package handlers
 import (
 	"database/sql"
 	"encoding/json"
+	//"fmt"
+	"log"
 	"net/http"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	//"golang.org/x/crypto/bcrypt"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // AuthHandler handles authentication routes
@@ -62,10 +64,50 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 			h.errorResponse(w, "Invalid email or password", http.StatusUnauthorized)
 			return
 		}
+		log.Printf("Database error during login: %v", err)
 		h.errorResponse(w, "Database error", http.StatusInternalServerError)
 		return
 	}
+
+	// Compare password
+	if err := bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(creds.Password)); err != nil {
+		h.errorResponse(w, "Invalid email or password", http.StatusUnauthorized)
+		return
+	}
+
+	// Create JWT claims
+	expirationTime := time.Now().Add(24 * time.Hour)
+	claims := &Claims{
+		UserID: userID,
+		RoleID: roleID,
+		Email:  creds.Email,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(expirationTime),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			Issuer:    "internal-inventory-tracker",
+		},
+	}
+
+	// Create token
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	tokenString, err := token.SignedString([]byte(h.JWTSecret))
+	if err != nil {
+		log.Printf("Token creation error: %v", err)
+		h.errorResponse(w, "Could not create token", http.StatusInternalServerError)
+		return
+	}
+
+	// Return token
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"token":      tokenString,
+		"expires_at": expirationTime,
+		"user_id":    userID,
+		"role_id":    roleID,
+		"email":      creds.Email,
+	})
 }
+
 // RefreshToken endpoint
 func (h *AuthHandler) RefreshToken(w http.ResponseWriter, r *http.Request) {
 	var body struct {

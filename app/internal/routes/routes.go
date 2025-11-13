@@ -13,12 +13,13 @@ import (
 func RegisterRoutes(
 	usersHandler *handlers.UsersHandler,
 	rolesHandler *handlers.RolesHandler,
-	//assetsHandler *handlers.AssetsHandler,
-	//ticketsHandler *handlers.TicketsHandler,
 	authHandler *handlers.AuthHandler,
-	jwtSecret string, // Add JWT secret parameter
+	jwtSecret string,
 ) http.Handler {
 	r := chi.NewRouter()
+
+	// Initialize authorization middleware
+	authMiddleware := middleware.NewAuthorizationMiddleware(usersHandler.Model.DB)
 
 	// -----------------------
 	// Public routes
@@ -35,55 +36,61 @@ func RegisterRoutes(
 	// Protected routes
 	// -----------------------
 	r.Group(func(protected chi.Router) {
-		// Pass JWT secret to the middleware
 		protected.Use(middleware.AuthMiddleware(jwtSecret))
 
-		// Users
+		// Users - Admin only
 		protected.Route("/api/v1/users", func(r chi.Router) {
-			r.Get("/", usersHandler.ListUsers)
-			r.Post("/", usersHandler.CreateUser)
+			// List users - Admin and IT only
+			r.With(authMiddleware.RequirePermission("users:read")).Get("/", usersHandler.ListUsers)
+			
+			// Create user - Admin only
+			r.With(authMiddleware.RequirePermission("users:create")).Post("/", usersHandler.CreateUser)
+			
 			r.Route("/{id}", func(r chi.Router) {
-				r.Get("/", usersHandler.GetUser)
-				r.Put("/", usersHandler.UpdateUser)
-				r.Delete("/", usersHandler.DeleteUser)
+				// Get user - Admin and IT only
+				r.With(authMiddleware.RequirePermission("users:read")).Get("/", usersHandler.GetUser)
+				
+				// Update user - Admin only
+				r.With(authMiddleware.RequirePermission("users:update")).Put("/", usersHandler.UpdateUser)
+				
+				// Delete user - Admin only
+				r.With(authMiddleware.RequirePermission("users:delete")).Delete("/", usersHandler.DeleteUser)
 			})
 		})
 
-		// Roles
+		// Roles - Admin only
 		protected.Route("/api/v1/roles", func(r chi.Router) {
-			r.Get("/", rolesHandler.ListRoles)
-			r.Post("/", rolesHandler.CreateRole)
+			// All role operations require admin permissions
+			r.With(authMiddleware.RequirePermission("roles:read")).Get("/", rolesHandler.ListRoles)
+			r.With(authMiddleware.RequirePermission("roles:create")).Post("/", rolesHandler.CreateRole)
+			
 			r.Route("/{id}", func(r chi.Router) {
-				r.Get("/", rolesHandler.GetRole)
-				r.Put("/", rolesHandler.UpdateRole)
-				r.Delete("/", rolesHandler.DeleteRole)
+				r.With(authMiddleware.RequirePermission("roles:read")).Get("/", rolesHandler.GetRole)
+				r.With(authMiddleware.RequirePermission("roles:update")).Put("/", rolesHandler.UpdateRole)
+				r.With(authMiddleware.RequirePermission("roles:delete")).Delete("/", rolesHandler.DeleteRole)
 			})
 		})
 
-		// Assets (commented out for now - uncomment when handlers are implemented)
-		// protected.Route("/api/v1/assets", func(r chi.Router) {
-		// 	r.Get("/", assetsHandler.ListAssets)
-		// 	r.Post("/", assetsHandler.CreateAsset)
-		// 	r.Route("/{id}", func(r chi.Router) {
-		// 		r.Get("/", assetsHandler.GetAsset)
-		// 		r.Put("/", assetsHandler.UpdateAsset)
-		// 		r.Delete("/", assetsHandler.DeleteAsset)
-		// 	})
-		// 	r.Get("/search", assetsHandler.SearchAssets)
-		// 	r.Post("/{id}/logs", assetsHandler.AssetLogs)
-		// })
+		// Example of role-based routes (commented out for now)
+		/*
+		// Admin only routes
+		protected.With(authMiddleware.RequireRole("admin")).Route("/api/v1/admin", func(r chi.Router) {
+			r.Get("/stats", adminHandler.GetStats)
+			r.Get("/audit-logs", adminHandler.GetAuditLogs)
+		})
 
-		// Tickets (commented out for now - uncomment when handlers are implemented)
-		// protected.Route("/api/v1/tickets", func(r chi.Router) {
-		// 	r.Get("/", ticketsHandler.ListTickets)
-		// 	r.Post("/", ticketsHandler.CreateTicket)
-		// 	r.Route("/{id}", func(r chi.Router) {
-		// 		r.Get("/", ticketsHandler.GetTicket)
-		// 		r.Put("/", ticketsHandler.UpdateTicket)
-		// 	})
-		// 	r.Post("/{id}/comments", ticketsHandler.AddComment)
-		// 	r.Get("/{id}/comments", ticketsHandler.ListComments)
-		// })
+		// IT staff routes
+		protected.With(authMiddleware.RequireAnyRole("admin", "it")).Route("/api/v1/it", func(r chi.Router) {
+			r.Get("/assets", assetsHandler.ListAssets)
+			r.Post("/assets", assetsHandler.CreateAsset)
+		})
+
+		// Staff/Team Lead routes
+		protected.With(authMiddleware.RequireAnyRole("admin", "it", "staff")).Route("/api/v1/staff", func(r chi.Router) {
+			r.Get("/tickets", ticketsHandler.ListTickets)
+			r.Put("/tickets/{id}", ticketsHandler.UpdateTicket)
+		})
+		*/
 	})
 
 	return r

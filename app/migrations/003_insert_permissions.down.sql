@@ -1,4 +1,4 @@
--- 003_permissions.down.sql
+-- 003_insert_permissions.down.sql
 
 -- Remove role permissions first (due to foreign key constraints)
 DELETE FROM role_permissions;

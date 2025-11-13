@@ -1,18 +1,27 @@
 #  RBAC 
 
+# Set your token
 
-# Need to be implemented 
 
-Later on, when I am at the mailing part, I would like all users From admin to viewer to be authenticated via a token that would be used to access the application
+login using the test admin  to generate token 
 
-Admins - Full admin rights to Create, view, Update, and Delete - Tickets, Assets, Users -
+curl -X POST http://localhost:8081/api/v1/login   -H "Content-Type: application/json"   -d '{"email":"admin@example.com","password":"admin123"}'
 
-Owner Management Hr IT
 
-low level Admins can Create View and Update Tickets only -
+TOKEN=" Enter generated token here "
 
-Staff Team leads/ QA
+# Test getting all users
+echo "=== Testing Users Endpoint ==="
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8081/api/v1/users
 
-The viewer would have access to their ticket only - 
+# Test getting all roles
+echo -e "\n=== Testing Roles Endpoint ==="
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8081/api/v1/roles
 
-Agents
+# Test getting specific user
+echo -e "\n=== Testing Specific User ==="
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8081/api/v1/users/1
+
+# Test getting specific role
+echo -e "\n=== Testing Specific Role ==="
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8081/api/v1/roles/1
