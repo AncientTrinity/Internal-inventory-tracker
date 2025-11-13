@@ -4,16 +4,23 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 )
 
-var JwtSecret = []byte("supersecretkey123")
+// same secret used in auth.go — later this will come from env/config
+var jwtSecret = []byte("supersecretkey123")
 
+// context keys for storing user info
 type contextKey string
 
-const UserContextKey = contextKey("user")
+const (
+	ContextUserID contextKey = "user_id"
+	ContextRoleID contextKey = "role_id"
+)
 
+// AuthMiddleware verifies JWT and injects claims into context
 func AuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		authHeader := r.Header.Get("Authorization")
@@ -22,12 +29,22 @@ func AuthMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
-		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-			return JwtSecret, nil
+		tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
+		if tokenStr == authHeader {
+			http.Error(w, "invalid authorization format", http.StatusUnauthorized)
+			return
+		}
+
+		// Parse and validate token
+		token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
+			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, jwt.ErrSignatureInvalid
+			}
+			return jwtSecret, nil
 		})
+
 		if err != nil || !token.Valid {
-			http.Error(w, "invalid token", http.StatusUnauthorized)
+			http.Error(w, "invalid or expired token", http.StatusUnauthorized)
 			return
 		}
 
@@ -37,22 +54,22 @@ func AuthMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		ctx := context.WithValue(r.Context(), UserContextKey, claims)
-		next.ServeHTTP(w, r.WithContext(ctx))
-	})
-}
-
-// Role-based authorization
-func RequireRole(roleID int, next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		claims := r.Context().Value(UserContextKey).(jwt.MapClaims)
-		userRole := int(claims["role_id"].(float64))
-
-		if userRole != roleID {
-			http.Error(w, "forbidden", http.StatusForbidden)
-			return
+		// Check expiration manually
+		if exp, ok := claims["exp"].(float64); ok {
+			if int64(exp) < time.Now().Unix() {
+				http.Error(w, "token expired", http.StatusUnauthorized)
+				return
+			}
 		}
 
-		next.ServeHTTP(w, r)
+		// Extract user info
+		userID, _ := claims["user_id"].(float64)
+		roleID, _ := claims["role_id"].(float64)
+
+		// Add to context
+		ctx := context.WithValue(r.Context(), ContextUserID, int(userID))
+		ctx = context.WithValue(ctx, ContextRoleID, int(roleID))
+
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
