@@ -1,63 +1,27 @@
-#  Auth model 
- 
- This repo is mostly used as a backup and moving foward each user can have a regular auth token or a protected auth token for the admins.
+#  RBAC 
+
+# Set your token
 
 
+login using the test admin  to generate token 
 
-# 1. Login (Get JWT)
-curl -X POST http://localhost:8081/api/v1/login \
-  -H "Content-Type: application/json" \
-  -d '{"email": "admin@example.com", "password": "password123"}'
-
-# Expected Reponse 
-
-{
-  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6..."
-}
+curl -X POST http://localhost:8081/api/v1/login   -H "Content-Type: application/json"   -d '{"email":"admin@example.com","password":"admin123"}'
 
 
-# 2. Access a Protected Route
+TOKEN=" Enter generated token here "
 
-Once you have your token, you can test a protected endpoint.
+# Test getting all users
+echo "=== Testing Users Endpoint ==="
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8081/api/v1/users
 
+# Test getting all roles
+echo -e "\n=== Testing Roles Endpoint ==="
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8081/api/v1/roles
 
-curl -X GET http://localhost:8081/api/v1/users \
-  -H "Authorization: Bearer YOUR_TOKEN_HERE"
+# Test getting specific user
+echo -e "\n=== Testing Specific User ==="
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8081/api/v1/users/1
 
-
-# Expected result:
-
-If the token is valid, you’ll get data.
-If not, you’ll get:
-
-{
-  "error": "unauthorized"
-}
-
-
-# Refresh token
- 
- curl -X POST http://localhost:8081/api/v1/refresh \
-  -H "Content-Type: application/json" \
-  -d '{"token": "YOUR_OLD_TOKEN_HERE"}'
-
-{
-  "token": "NEW_JWT_TOKEN_HERE"
-}
-
-
-# Need to be implemented 
-
-Later on, when I am at the mailing part, I would like all users From admin to viewer to be authenticated via a token that would be used to access the application
-
-Admins - Full admin rights to Create, view, Update, and Delete - Tickets, Assets, Users -
-
-Owner Management Hr IT
-
-low level Admins can Create View and Update Tickets only -
-
-Staff Team leads/ QA
-
-The viewer would have access to their ticket only - 
-
-Agents
+# Test getting specific role
+echo -e "\n=== Testing Specific Role ==="
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8081/api/v1/roles/1

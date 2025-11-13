@@ -38,6 +38,8 @@ services:
       - "5432:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
+    # Add this command to enable extensions
+    command: ["postgres", "-c", "shared_preload_libraries=citext"]
     networks:
       - backend
 
