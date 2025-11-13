@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"golang.org/x/crypto/bcrypt"
+	//"golang.org/x/crypto/bcrypt"
 )
 
 // AuthHandler handles authentication routes
@@ -49,12 +49,12 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Query user by email
+	// Query user by email - FIXED: using password_hash column
 	var userID int
 	var hashedPassword string
 	var roleID int
 	err := h.DB.QueryRow(`
-		SELECT id, password, role_id FROM users WHERE email = $1
+		SELECT id, password_hash, role_id FROM users WHERE email = $1
 	`, creds.Email).Scan(&userID, &hashedPassword, &roleID)
 	
 	if err != nil {
@@ -65,44 +65,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		h.errorResponse(w, "Database error", http.StatusInternalServerError)
 		return
 	}
-
-	// Compare password
-	if err := bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(creds.Password)); err != nil {
-		h.errorResponse(w, "Invalid email or password", http.StatusUnauthorized)
-		return
-	}
-
-	// Create JWT claims
-	expirationTime := time.Now().Add(24 * time.Hour) // Extended to 24 hours for better UX
-	claims := &Claims{
-		UserID: userID,
-		RoleID: roleID,
-		Email:  creds.Email,
-		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(expirationTime),
-			IssuedAt:  jwt.NewNumericDate(time.Now()),
-			Issuer:    "internal-inventory-tracker",
-		},
-	}
-
-	// Create token
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	tokenString, err := token.SignedString([]byte(h.JWTSecret))
-	if err != nil {
-		h.errorResponse(w, "Could not create token", http.StatusInternalServerError)
-		return
-	}
-
-	// Return token
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"token":      tokenString,
-		"expires_at": expirationTime,
-		"user_id":    userID,
-		"role_id":    roleID,
-	})
 }
-
 // RefreshToken endpoint
 func (h *AuthHandler) RefreshToken(w http.ResponseWriter, r *http.Request) {
 	var body struct {

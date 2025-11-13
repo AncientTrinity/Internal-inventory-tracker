@@ -1,5 +1,8 @@
 -- 001_create_tables.up.sql
 
+-- Enable citext extension for case-insensitive email fields
+CREATE EXTENSION IF NOT EXISTS citext;
+
 -- roles table with enhanced columns for RBAC
 CREATE TABLE roles (
   id SERIAL PRIMARY KEY,

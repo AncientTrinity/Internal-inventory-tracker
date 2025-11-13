@@ -60,7 +60,7 @@ func RegisterRoutes(
 			})
 		})
 
-		// Assets (commented out for now)
+		// Assets (commented out for now - uncomment when handlers are implemented)
 		// protected.Route("/api/v1/assets", func(r chi.Router) {
 		// 	r.Get("/", assetsHandler.ListAssets)
 		// 	r.Post("/", assetsHandler.CreateAsset)
@@ -73,7 +73,7 @@ func RegisterRoutes(
 		// 	r.Post("/{id}/logs", assetsHandler.AssetLogs)
 		// })
 
-		// Tickets (commented out for now)
+		// Tickets (commented out for now - uncomment when handlers are implemented)
 		// protected.Route("/api/v1/tickets", func(r chi.Router) {
 		// 	r.Get("/", ticketsHandler.ListTickets)
 		// 	r.Post("/", ticketsHandler.CreateTicket)
@@ -84,9 +84,6 @@ func RegisterRoutes(
 		// 	r.Post("/{id}/comments", ticketsHandler.AddComment)
 		// 	r.Get("/{id}/comments", ticketsHandler.ListComments)
 		// })
-
-		// Quick linking helpers
-		// r.Get("/api/v1/agents/{id}/assets", assetsHandler.AgentAssets)
 	})
 
 	return r

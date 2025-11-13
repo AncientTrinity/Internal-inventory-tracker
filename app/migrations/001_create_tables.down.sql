@@ -1,6 +1,9 @@
 -- 001_create_tables.down.sql
 -- Drop tables in reverse dependency order
 
+-- Drop the citext extension
+DROP EXTENSION IF EXISTS citext;
+
 -- Drop indexes first
 DROP INDEX IF EXISTS idx_audit_log_created_at;
 DROP INDEX IF EXISTS idx_audit_log_user_id;
