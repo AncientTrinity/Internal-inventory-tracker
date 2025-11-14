@@ -10,6 +10,8 @@ curl -X POST http://localhost:8081/api/v1/login   -H "Content-Type: application/
 
 TOKEN=$"Enter generated token here "
 
+echo "Testing token: $TOKEN"
+
 # Test getting all users
 echo "=== Testing Users Endpoint ==="
 curl -H "Authorization: Bearer $TOKEN" http://localhost:8081/api/v1/users
