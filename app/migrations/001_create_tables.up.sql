@@ -87,6 +87,7 @@ CREATE TABLE tickets (
   assigned_to BIGINT REFERENCES users(id) ON DELETE SET NULL,
   asset_id BIGINT REFERENCES assets(id) ON DELETE SET NULL,
   is_internal BOOLEAN DEFAULT true,
+   completion INTEGER NOT NULL DEFAULT 0, -- 0-100 percentage
   created_at TIMESTAMP NOT NULL DEFAULT now(),
   updated_at TIMESTAMP NOT NULL DEFAULT now(),
   closed_at TIMESTAMP

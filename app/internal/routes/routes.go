@@ -11,13 +11,15 @@ import (
 
 // RegisterRoutes sets up all routes using chi.Router
 func RegisterRoutes(
-	usersHandler *handlers.UsersHandler,
-	rolesHandler *handlers.RolesHandler,
-	assetsHandler *handlers.AssetsHandler,
-	assetServiceHandler *handlers.AssetServiceHandler,
-	assetAssignmentHandler *handlers.AssetAssignmentHandler,
-	assetSearchHandler *handlers.AssetSearchHandler,
-	authHandler *handlers.AuthHandler,
+	usersHandler *handlers.UsersHandler,// new users handler
+	rolesHandler *handlers.RolesHandler,// new roles handler
+	assetsHandler *handlers.AssetsHandler,// new assets handler
+	assetServiceHandler *handlers.AssetServiceHandler,// new asset service handler
+	assetAssignmentHandler *handlers.AssetAssignmentHandler,// new asset assignment handler
+	assetSearchHandler *handlers.AssetSearchHandler,// new asset search handler
+	ticketsHandler *handlers.TicketsHandler, //tickets handler
+	ticketCommentsHandler *handlers.TicketCommentsHandler, // ticket comments handler
+	authHandler *handlers.AuthHandler,// new auth handler
 	jwtSecret string,
 ) http.Handler {
 	r := chi.NewRouter()
@@ -99,9 +101,35 @@ func RegisterRoutes(
 			r.Route("/service-logs", func(r chi.Router) {
 				r.With(authMiddleware.RequirePermission("assets:update")).Post("/", assetServiceHandler.CreateServiceLog)// Create service log
 				r.With(authMiddleware.RequirePermission("assets:read")).Get("/", assetServiceHandler.GetServiceLogs)// Get service logs
+
+				//Tickets route
+				
 			})
 		})
 	})
+		// Tickets routes
+	  	protected.Route("/api/v1/tickets", func(r chi.Router) {
+		r.With(authMiddleware.RequirePermission("tickets:read")).Get("/", ticketsHandler.ListTickets)
+		r.With(authMiddleware.RequirePermission("tickets:create")).Post("/", ticketsHandler.CreateTicket)
+		r.With(authMiddleware.RequirePermission("tickets:read")).Get("/stats", ticketsHandler.GetTicketStats)
+		
+		r.Route("/{id}", func(r chi.Router) {
+			r.With(authMiddleware.RequirePermission("tickets:read")).Get("/", ticketsHandler.GetTicket)
+			r.With(authMiddleware.RequirePermission("tickets:update")).Put("/", ticketsHandler.UpdateTicket)
+			
+			// Ticket status updates
+			r.With(authMiddleware.RequirePermission("tickets:update")).Post("/status", ticketsHandler.UpdateTicketStatus)
+			r.With(authMiddleware.RequirePermission("tickets:assign")).Post("/reassign", ticketsHandler.ReassignTicket)
+			
+			// Ticket comments
+			r.Route("/comments", func(r chi.Router) {
+				r.With(authMiddleware.RequirePermission("tickets:read")).Get("/", ticketCommentsHandler.GetComments)
+				r.With(authMiddleware.RequirePermission("tickets:update")).Post("/", ticketCommentsHandler.CreateComment)
+			})
+		})
+	})
+
+
 
 	// Individual service log routes
 	protected.Route("/api/v1/service-logs", func(r chi.Router) {
@@ -110,28 +138,14 @@ func RegisterRoutes(
 		})
 	})
 
-
-
-		// Example of role-based routes (commented out for now)
-		/*
-		// Admin only routes
-		protected.With(authMiddleware.RequireRole("admin")).Route("/api/v1/admin", func(r chi.Router) {
-			r.Get("/stats", adminHandler.GetStats)
-			r.Get("/audit-logs", adminHandler.GetAuditLogs)
+    	// Individual comment routes
+	protected.Route("/api/v1/comments", func(r chi.Router) {
+		r.Route("/{id}", func(r chi.Router) {
+			r.With(authMiddleware.RequirePermission("tickets:update")).Put("/", ticketCommentsHandler.UpdateComment)
+			r.With(authMiddleware.RequirePermission("tickets:update")).Delete("/", ticketCommentsHandler.DeleteComment)
 		})
+	})
 
-		// IT staff routes
-		protected.With(authMiddleware.RequireAnyRole("admin", "it")).Route("/api/v1/it", func(r chi.Router) {
-			r.Get("/assets", assetsHandler.ListAssets)
-			r.Post("/assets", assetsHandler.CreateAsset)
-		})
-
-		// Staff/Team Lead routes
-		protected.With(authMiddleware.RequireAnyRole("admin", "it", "staff")).Route("/api/v1/staff", func(r chi.Router) {
-			r.Get("/tickets", ticketsHandler.ListTickets)
-			r.Put("/tickets/{id}", ticketsHandler.UpdateTicket)
-		})
-		*/
 	})
 
 	return r
