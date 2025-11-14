@@ -144,3 +144,36 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 
   # Test the user assets endpoint (now at /api/v1/users/{id}/assets)
 curl -H "Authorization: Bearer $TOKEN" http://localhost:8081/api/v1/users/7/assets
+
+# Get asset statistics
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8081/api/v1/assets/stats
+
+# Get all asset types
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8081/api/v1/assets/types
+
+# Get all manufacturers
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8081/api/v1/assets/manufacturers
+
+# Search by keyword
+curl -H "Authorization: Bearer $TOKEN" "http://localhost:8081/api/v1/assets/search?q=viewsonic"
+
+# Filter by type
+curl -H "Authorization: Bearer $TOKEN" "http://localhost:8081/api/v1/assets/search?type=PC"
+
+# Filter by status
+curl -H "Authorization: Bearer $TOKEN" "http://localhost:8081/api/v1/assets/search?status=IN_USE"
+
+# Filter by manufacturer
+curl -H "Authorization: Bearer $TOKEN" "http://localhost:8081/api/v1/assets/search?manufacturer=HP"
+
+# Combined filters
+curl -H "Authorization: Bearer $TOKEN" "http://localhost:8081/api/v1/assets/search?type=PC&status=IN_USE"
+
+# Search with pagination
+curl -H "Authorization: Bearer $TOKEN" "http://localhost:8081/api/v1/assets/search?limit=5&offset=0"
+
+# Sort by different fields
+curl -H "Authorization: Bearer $TOKEN" "http://localhost:8081/api/v1/assets/search?sort_by=date_purchased&sort_order=DESC"
+
+# Find assets that need service
+curl -H "Authorization: Bearer $TOKEN" "http://localhost:8081/api/v1/assets/search?needs_service=true"

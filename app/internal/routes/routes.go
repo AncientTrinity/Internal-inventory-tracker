@@ -16,6 +16,7 @@ func RegisterRoutes(
 	assetsHandler *handlers.AssetsHandler,
 	assetServiceHandler *handlers.AssetServiceHandler,
 	assetAssignmentHandler *handlers.AssetAssignmentHandler,
+	assetSearchHandler *handlers.AssetSearchHandler,
 	authHandler *handlers.AuthHandler,
 	jwtSecret string,
 ) http.Handler {
@@ -82,6 +83,10 @@ func RegisterRoutes(
 		r.With(authMiddleware.RequirePermission("assets:create")).Post("/", assetsHandler.CreateAsset)// Create asset
 		r.With(authMiddleware.RequirePermission("assets:read")).Get("/available", assetAssignmentHandler.GetAvailableAssets) // Available assets
 		r.With(authMiddleware.RequirePermission("assets:update")).Post("/bulk-assign", assetAssignmentHandler.BulkAssignAssets) // Bulk assign assets
+		r.With(authMiddleware.RequirePermission("assets:read")).Get("/search", assetSearchHandler.SearchAssets)// Search assets
+		r.With(authMiddleware.RequirePermission("assets:read")).Get("/stats", assetSearchHandler.GetAssetStats)// Asset stats
+		r.With(authMiddleware.RequirePermission("assets:read")).Get("/types", assetSearchHandler.GetAssetTypes)// Asset types
+		r.With(authMiddleware.RequirePermission("assets:read")).Get("/manufacturers", assetSearchHandler.GetManufacturers)// Manufacturers
 		
 		r.Route("/{id}", func(r chi.Router) {
 			r.With(authMiddleware.RequirePermission("assets:read")).Get("/", assetsHandler.GetAsset)// Get asset

@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"errors"
 	"time"
+	"strconv"
+	"strings"
 )
 
 type Asset struct {
@@ -365,4 +367,215 @@ func (m *AssetsModel) GetAvailableAssets(assetType string) ([]Asset, error) {
 	}
 	
 	return assets, nil
+}
+
+
+// SearchAssets performs advanced search across multiple fields
+func (m *AssetsModel) SearchAssets(query string, filters AssetSearchFilters) ([]Asset, error) {
+	baseQuery := `
+		SELECT 
+			id, internal_id, asset_type, manufacturer, model, model_number,
+			serial_number, status, in_use_by, date_purchased, last_service_date,
+			next_service_date, created_at, updated_at
+		FROM assets 
+		WHERE 1=1
+	`
+	
+	args := []interface{}{}
+	argPos := 1
+	
+	// Text search across multiple fields
+	if query != "" {
+		searchTerm := "%" + strings.ToLower(query) + "%"
+		baseQuery += ` AND (
+			LOWER(internal_id) LIKE $` + strconv.Itoa(argPos) + ` OR
+			LOWER(asset_type) LIKE $` + strconv.Itoa(argPos) + ` OR
+			LOWER(manufacturer) LIKE $` + strconv.Itoa(argPos) + ` OR
+			LOWER(model) LIKE $` + strconv.Itoa(argPos) + ` OR
+			LOWER(model_number) LIKE $` + strconv.Itoa(argPos) + ` OR
+			LOWER(serial_number) LIKE $` + strconv.Itoa(argPos) + `
+		)`
+		args = append(args, searchTerm)
+		argPos++
+	}
+	
+	// Apply filters
+	if filters.AssetType != "" {
+		baseQuery += ` AND asset_type = $` + strconv.Itoa(argPos)
+		args = append(args, filters.AssetType)
+		argPos++
+	}
+	
+	if filters.Status != "" {
+		baseQuery += ` AND status = $` + strconv.Itoa(argPos)
+		args = append(args, filters.Status)
+		argPos++
+	}
+	
+	if filters.Manufacturer != "" {
+		baseQuery += ` AND LOWER(manufacturer) = $` + strconv.Itoa(argPos)
+		args = append(args, strings.ToLower(filters.Manufacturer))
+		argPos++
+	}
+	
+	if filters.InUseBy != nil {
+		baseQuery += ` AND in_use_by = $` + strconv.Itoa(argPos)
+		args = append(args, *filters.InUseBy)
+		argPos++
+	}
+	
+	// Date range filters
+	if !filters.PurchasedAfter.IsZero() {
+		baseQuery += ` AND date_purchased >= $` + strconv.Itoa(argPos)
+		args = append(args, filters.PurchasedAfter)
+		argPos++
+	}
+	
+	if !filters.PurchasedBefore.IsZero() {
+		baseQuery += ` AND date_purchased <= $` + strconv.Itoa(argPos)
+		args = append(args, filters.PurchasedBefore)
+		argPos++
+	}
+	
+	// Service date filters
+	if filters.NeedsService {
+		baseQuery += ` AND (next_service_date IS NOT NULL AND next_service_date <= CURRENT_DATE)`
+	}
+	
+	if filters.OverdueService {
+		baseQuery += ` AND (next_service_date IS NOT NULL AND next_service_date < CURRENT_DATE)`
+	}
+	
+	// Sorting
+	sortField := filters.SortBy
+	if sortField == "" {
+		sortField = "internal_id"
+	}
+	
+	sortOrder := filters.SortOrder
+	if sortOrder == "" {
+		sortOrder = "ASC"
+	}
+	
+	// Validate sort field to prevent SQL injection
+	validSortFields := map[string]bool{
+		"internal_id": true, "asset_type": true, "manufacturer": true, 
+		"model": true, "status": true, "date_purchased": true,
+		"last_service_date": true, "next_service_date": true, "created_at": true,
+	}
+	
+	if !validSortFields[sortField] {
+		sortField = "internal_id"
+	}
+	
+	if sortOrder != "ASC" && sortOrder != "DESC" {
+		sortOrder = "ASC"
+	}
+	
+	baseQuery += ` ORDER BY ` + sortField + ` ` + sortOrder
+	
+	// Pagination
+	if filters.Limit > 0 {
+		baseQuery += ` LIMIT $` + strconv.Itoa(argPos)
+		args = append(args, filters.Limit)
+		argPos++
+		
+		if filters.Offset > 0 {
+			baseQuery += ` OFFSET $` + strconv.Itoa(argPos)
+			args = append(args, filters.Offset)
+		}
+	}
+	
+	rows, err := m.DB.Query(baseQuery, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	
+	var assets []Asset
+	for rows.Next() {
+		var asset Asset
+		err := rows.Scan(
+			&asset.ID,
+			&asset.InternalID,
+			&asset.AssetType,
+			&asset.Manufacturer,
+			&asset.Model,
+			&asset.ModelNumber,
+			&asset.SerialNumber,
+			&asset.Status,
+			&asset.InUseBy,
+			&asset.DatePurchased,
+			&asset.LastServiceDate,
+			&asset.NextServiceDate,
+			&asset.CreatedAt,
+			&asset.UpdatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		assets = append(assets, asset)
+	}
+	
+	return assets, nil
+}
+
+// GetAssetStats returns statistics about assets
+func (m *AssetsModel) GetAssetStats() (*AssetStats, error) {
+	query := `
+		SELECT 
+			COUNT(*) as total_assets,
+			COUNT(CASE WHEN status = 'IN_USE' THEN 1 END) as in_use,
+			COUNT(CASE WHEN status = 'IN_STORAGE' THEN 1 END) as in_storage,
+			COUNT(CASE WHEN status = 'REPAIR' THEN 1 END) as in_repair,
+			COUNT(CASE WHEN status = 'RETIRED' THEN 1 END) as retired,
+			COUNT(CASE WHEN next_service_date <= CURRENT_DATE THEN 1 END) as needs_service,
+			COUNT(DISTINCT asset_type) as asset_types_count
+		FROM assets
+	`
+	
+	var stats AssetStats
+	err := m.DB.QueryRow(query).Scan(
+		&stats.TotalAssets,
+		&stats.InUse,
+		&stats.InStorage,
+		&stats.InRepair,
+		&stats.Retired,
+		&stats.NeedsService,
+		&stats.AssetTypesCount,
+	)
+	
+	if err != nil {
+		return nil, err
+	}
+	
+	return &stats, nil
+}
+
+// AssetSearchFilters for advanced searching
+type AssetSearchFilters struct {
+	Query           string
+	AssetType       string
+	Status          string
+	Manufacturer    string
+	InUseBy         *int64
+	PurchasedAfter  time.Time
+	PurchasedBefore time.Time
+	NeedsService    bool
+	OverdueService  bool
+	SortBy          string
+	SortOrder       string
+	Limit           int
+	Offset          int
+}
+
+// AssetStats for dashboard
+type AssetStats struct {
+	TotalAssets     int `json:"total_assets"`
+	InUse           int `json:"in_use"`
+	InStorage       int `json:"in_storage"`
+	InRepair        int `json:"in_repair"`
+	Retired         int `json:"retired"`
+	NeedsService    int `json:"needs_service"`
+	AssetTypesCount int `json:"asset_types_count"`
 }
