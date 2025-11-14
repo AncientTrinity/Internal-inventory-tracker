@@ -1,27 +1,26 @@
-#  RBAC 
+#  Asset Management System
 
-# Set your token
+This is one of the main features of this program 
+
+Since Creating the User and the RBAC system Development Time of the following Features are going to be easier to develop
+
+Features Left:
+
+Asset Managment System - Full Features will be implemented 
+
+Ticket System
+
+Front End Development
+
+Unit Test 
+
+Metrics for both the Asset system and Ticket system 
 
 
-login using the test admin  to generate token 
 
-curl -X POST http://localhost:8081/api/v1/login   -H "Content-Type: application/json"   -d '{"email":"admin@example.com","password":"admin123"}'
+# How to operate 
 
+this is how to operate the asset managment system with Curl 
 
-TOKEN=" Enter generated token here "
+This will be for testing purposes before implementing a full stack website and app with flutter 
 
-# Test getting all users
-echo "=== Testing Users Endpoint ==="
-curl -H "Authorization: Bearer $TOKEN" http://localhost:8081/api/v1/users
-
-# Test getting all roles
-echo -e "\n=== Testing Roles Endpoint ==="
-curl -H "Authorization: Bearer $TOKEN" http://localhost:8081/api/v1/roles
-
-# Test getting specific user
-echo -e "\n=== Testing Specific User ==="
-curl -H "Authorization: Bearer $TOKEN" http://localhost:8081/api/v1/users/1
-
-# Test getting specific role
-echo -e "\n=== Testing Specific Role ==="
-curl -H "Authorization: Bearer $TOKEN" http://localhost:8081/api/v1/roles/1
