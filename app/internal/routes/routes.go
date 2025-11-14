@@ -13,6 +13,7 @@ import (
 func RegisterRoutes(
 	usersHandler *handlers.UsersHandler,
 	rolesHandler *handlers.RolesHandler,
+	assetsHandler *handlers.AssetsHandler,
 	authHandler *handlers.AuthHandler,
 	jwtSecret string,
 ) http.Handler {
@@ -70,6 +71,17 @@ func RegisterRoutes(
 				r.With(authMiddleware.RequirePermission("roles:delete")).Delete("/", rolesHandler.DeleteRole)
 			})
 		})
+
+		protected.Route("/api/v1/assets", func(r chi.Router) {
+		r.With(authMiddleware.RequirePermission("assets:read")).Get("/", assetsHandler.ListAssets)
+		r.With(authMiddleware.RequirePermission("assets:create")).Post("/", assetsHandler.CreateAsset)
+		
+		r.Route("/{id}", func(r chi.Router) {
+			r.With(authMiddleware.RequirePermission("assets:read")).Get("/", assetsHandler.GetAsset)
+			r.With(authMiddleware.RequirePermission("assets:update")).Put("/", assetsHandler.UpdateAsset)
+			r.With(authMiddleware.RequirePermission("assets:delete")).Delete("/", assetsHandler.DeleteAsset)
+		})
+	})
 
 		// Example of role-based routes (commented out for now)
 		/*

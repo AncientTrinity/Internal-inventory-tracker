@@ -24,3 +24,64 @@ this is how to operate the asset managment system with Curl
 
 This will be for testing purposes before implementing a full stack website and app with flutter 
 
+# Creating assets as an admin
+
+# Set your admin token
+TOKEN="your_admin_token_here"
+
+# Test 1: Create PC asset with date
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "internal_id": "DPA-PC001",
+    "asset_type": "PC",
+    "manufacturer": "Dell",
+    "model": "OptiPlex 7070",
+    "model_number": "OP7070",
+    "serial_number": "ABC123456",
+    "status": "IN_STORAGE",
+    "date_purchased": "2024-01-15"
+  }' \
+  http://localhost:8081/api/v1/assets
+
+# Test 2: Create another PC
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "internal_id": "DPA-PC002", 
+    "asset_type": "PC",
+    "manufacturer": "HP",
+    "model": "EliteDesk 800 G5",
+    "model_number": "ED800G5",
+    "serial_number": "XYZ789012",
+    "status": "IN_USE",
+    "in_use_by": 5,
+    "date_purchased": "2024-02-20"
+  }' \
+  http://localhost:8081/api/v1/assets
+
+# Test 3: Create a headset
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "internal_id": "AM-H001",
+    "asset_type": "Headset", 
+    "manufacturer": "Logitech",
+    "model": "H390",
+    "model_number": "H390",
+    "serial_number": "HS123456",
+    "status": "IN_STORAGE"
+  }' \
+  http://localhost:8081/api/v1/assets
+
+
+# List all assets to see everything
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8081/api/v1/assets
+
+# Filter by type
+curl -H "Authorization: Bearer $TOKEN" "http://localhost:8081/api/v1/assets?type=PC"
+curl -H "Authorization: Bearer $TOKEN" "http://localhost:8081/api/v1/assets?type=Monitor"
+
+# Filter by status
+curl -H "Authorization: Bearer $TOKEN" "http://localhost:8081/api/v1/assets?status=IN_USE"
+curl -H "Authorization: Bearer $TOKEN" "http://localhost:8081/api/v1/assets?status=IN_STORAGE"

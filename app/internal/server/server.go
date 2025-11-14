@@ -20,10 +20,11 @@ func NewServer(db *sql.DB, cfg *config.Config) *http.Server {
 	// Initialize handlers with config
 	usersHandler := handlers.NewUsersHandler(db)
 	rolesHandler := handlers.NewRolesHandler(db)
+	assetsHandler := handlers.NewAssetsHandler(db)
 	authHandler := handlers.NewAuthHandler(db, cfg.JWTSecret)
 
 	// Register routes using handlers and JWT secret
-	router := routes.RegisterRoutes(usersHandler, rolesHandler, authHandler, cfg.JWTSecret)
+	router := routes.RegisterRoutes(usersHandler, rolesHandler, assetsHandler, authHandler, cfg.JWTSecret)
 
 	return &http.Server{
 		Addr:         ":" + port,
