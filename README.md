@@ -24,6 +24,17 @@ this is how to operate the asset managment system with Curl
 
 This will be for testing purposes before implementing a full stack website and app with flutter 
 
+
+# Set your token
+
+login using the test admin to generate token
+
+curl -X POST http://localhost:8081/api/v1/login -H "Content-Type: application/json" -d '{"email":"admin@example.com","password":"admin123"}'
+
+TOKEN=$"Enter generated token here "
+
+echo "Testing token: $TOKEN"
+
 # Creating assets as an admin
 
 # Set your admin token
