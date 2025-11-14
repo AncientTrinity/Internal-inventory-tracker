@@ -14,6 +14,7 @@ func RegisterRoutes(
 	usersHandler *handlers.UsersHandler,
 	rolesHandler *handlers.RolesHandler,
 	assetsHandler *handlers.AssetsHandler,
+	assetServiceHandler *handlers.AssetServiceHandler,
 	authHandler *handlers.AuthHandler,
 	jwtSecret string,
 ) http.Handler {
@@ -71,7 +72,8 @@ func RegisterRoutes(
 				r.With(authMiddleware.RequirePermission("roles:delete")).Delete("/", rolesHandler.DeleteRole)
 			})
 		})
-
+       
+		// Assets
 		protected.Route("/api/v1/assets", func(r chi.Router) {
 		r.With(authMiddleware.RequirePermission("assets:read")).Get("/", assetsHandler.ListAssets)
 		r.With(authMiddleware.RequirePermission("assets:create")).Post("/", assetsHandler.CreateAsset)
@@ -80,8 +82,22 @@ func RegisterRoutes(
 			r.With(authMiddleware.RequirePermission("assets:read")).Get("/", assetsHandler.GetAsset)
 			r.With(authMiddleware.RequirePermission("assets:update")).Put("/", assetsHandler.UpdateAsset)
 			r.With(authMiddleware.RequirePermission("assets:delete")).Delete("/", assetsHandler.DeleteAsset)
+			
+			// Service logs for specific asset
+			r.Route("/service-logs", func(r chi.Router) {
+				r.With(authMiddleware.RequirePermission("assets:update")).Post("/", assetServiceHandler.CreateServiceLog)
+				r.With(authMiddleware.RequirePermission("assets:read")).Get("/", assetServiceHandler.GetServiceLogs)
+			})
 		})
 	})
+
+	// Individual service log routes
+	protected.Route("/api/v1/service-logs", func(r chi.Router) {
+		r.Route("/{id}", func(r chi.Router) {
+			r.With(authMiddleware.RequirePermission("assets:read")).Get("/", assetServiceHandler.GetServiceLog)
+		})
+	})
+
 
 		// Example of role-based routes (commented out for now)
 		/*

@@ -85,3 +85,39 @@ curl -H "Authorization: Bearer $TOKEN" "http://localhost:8081/api/v1/assets?type
 # Filter by status
 curl -H "Authorization: Bearer $TOKEN" "http://localhost:8081/api/v1/assets?status=IN_USE"
 curl -H "Authorization: Bearer $TOKEN" "http://localhost:8081/api/v1/assets?status=IN_STORAGE"
+
+
+# Get asset ID first (let's assume you have asset ID 1 - the PC)
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8081/api/v1/assets
+
+# Add a maintenance service log for asset ID 1
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "service_type": "MAINTENANCE",
+    "performed_by": 1,
+    "performed_at": "2024-11-13",
+    "next_service_date": "2025-05-13",
+    "notes": "Routine maintenance: cleaned fans, updated drivers, checked hardware"
+  }' \
+  http://localhost:8081/api/v1/assets/1/service-logs
+
+# Add a repair service log
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "service_type": "REPAIR", 
+    "performed_by": 5,
+    "performed_at": "2024-10-15",
+    "notes": "Replaced faulty RAM module"
+  }' \
+  http://localhost:8081/api/v1/assets/1/service-logs
+
+# Get all service logs for asset ID 1
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8081/api/v1/assets/1/service-logs
+
+# Get specific service log (replace {id} with actual log ID from above)
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8081/api/v1/service-logs/1
+
+# Check that asset service dates were updated
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8081/api/v1/assets/1
