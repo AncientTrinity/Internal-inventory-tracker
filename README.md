@@ -1,27 +1,179 @@
-#  RBAC 
+#  Asset Management System
+
+This is one of the main features of this program 
+
+Since Creating the User and the RBAC system Development Time of the following Features are going to be easier to develop
+
+Features Left:
+
+Asset Managment System - Full Features will be implemented 
+
+Ticket System
+
+Front End Development
+
+Unit Test 
+
+Metrics for both the Asset system and Ticket system 
+
+
+
+# How to operate 
+
+this is how to operate the asset managment system with Curl 
+
+This will be for testing purposes before implementing a full stack website and app with flutter 
+
 
 # Set your token
 
+login using the test admin to generate token
 
-login using the test admin  to generate token 
+curl -X POST http://localhost:8081/api/v1/login -H "Content-Type: application/json" -d '{"email":"admin@example.com","password":"admin123"}'
 
-curl -X POST http://localhost:8081/api/v1/login   -H "Content-Type: application/json"   -d '{"email":"admin@example.com","password":"admin123"}'
+TOKEN=$"Enter generated token here "
+
+echo "Testing token: $TOKEN"
+
+# Creating assets as an admin
+
+# Set your admin token
+TOKEN="your_admin_token_here"
+
+# Test 1: Create PC asset with date
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "internal_id": "DPA-PC001",
+    "asset_type": "PC",
+    "manufacturer": "Dell",
+    "model": "OptiPlex 7070",
+    "model_number": "OP7070",
+    "serial_number": "ABC123456",
+    "status": "IN_STORAGE",
+    "date_purchased": "2024-01-15"
+  }' \
+  http://localhost:8081/api/v1/assets
+
+# Test 2: Create another PC
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "internal_id": "DPA-PC002", 
+    "asset_type": "PC",
+    "manufacturer": "HP",
+    "model": "EliteDesk 800 G5",
+    "model_number": "ED800G5",
+    "serial_number": "XYZ789012",
+    "status": "IN_USE",
+    "in_use_by": 5,
+    "date_purchased": "2024-02-20"
+  }' \
+  http://localhost:8081/api/v1/assets
+
+# Test 3: Create a headset
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "internal_id": "AM-H001",
+    "asset_type": "Headset", 
+    "manufacturer": "Logitech",
+    "model": "H390",
+    "model_number": "H390",
+    "serial_number": "HS123456",
+    "status": "IN_STORAGE"
+  }' \
+  http://localhost:8081/api/v1/assets
 
 
-TOKEN=" Enter generated token here "
+# List all assets to see everything
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8081/api/v1/assets
 
-# Test getting all users
-echo "=== Testing Users Endpoint ==="
-curl -H "Authorization: Bearer $TOKEN" http://localhost:8081/api/v1/users
+# Filter by type
+curl -H "Authorization: Bearer $TOKEN" "http://localhost:8081/api/v1/assets?type=PC"
+curl -H "Authorization: Bearer $TOKEN" "http://localhost:8081/api/v1/assets?type=Monitor"
 
-# Test getting all roles
-echo -e "\n=== Testing Roles Endpoint ==="
-curl -H "Authorization: Bearer $TOKEN" http://localhost:8081/api/v1/roles
+# Filter by status
+curl -H "Authorization: Bearer $TOKEN" "http://localhost:8081/api/v1/assets?status=IN_USE"
+curl -H "Authorization: Bearer $TOKEN" "http://localhost:8081/api/v1/assets?status=IN_STORAGE"
 
-# Test getting specific user
-echo -e "\n=== Testing Specific User ==="
-curl -H "Authorization: Bearer $TOKEN" http://localhost:8081/api/v1/users/1
 
-# Test getting specific role
-echo -e "\n=== Testing Specific Role ==="
-curl -H "Authorization: Bearer $TOKEN" http://localhost:8081/api/v1/roles/1
+# Get asset ID first (let's assume you have asset ID 1 - the PC)
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8081/api/v1/assets
+
+# Add a maintenance service log for asset ID 1
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "service_type": "MAINTENANCE",
+    "performed_by": 1,
+    "performed_at": "2024-11-13",
+    "next_service_date": "2025-05-13",
+    "notes": "Routine maintenance: cleaned fans, updated drivers, checked hardware"
+  }' \
+  http://localhost:8081/api/v1/assets/1/service-logs
+
+# Add a repair service log
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "service_type": "REPAIR", 
+    "performed_by": 5,
+    "performed_at": "2024-10-15",
+    "notes": "Replaced faulty RAM module"
+  }' \
+  http://localhost:8081/api/v1/assets/1/service-logs
+
+# Get all service logs for asset ID 1
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8081/api/v1/assets/1/service-logs
+
+# Get specific service log (replace {id} with actual log ID from above)
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8081/api/v1/service-logs/1
+
+# Check that asset service dates were updated
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8081/api/v1/assets/1
+
+# Test the bulk assignment
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": 7,
+    "asset_ids": [1, 3]
+  }' \
+  http://localhost:8081/api/v1/assets/bulk-assign
+
+  # Test the user assets endpoint (now at /api/v1/users/{id}/assets)
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8081/api/v1/users/7/assets
+
+# Get asset statistics
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8081/api/v1/assets/stats
+
+# Get all asset types
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8081/api/v1/assets/types
+
+# Get all manufacturers
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8081/api/v1/assets/manufacturers
+
+# Search by keyword
+curl -H "Authorization: Bearer $TOKEN" "http://localhost:8081/api/v1/assets/search?q=viewsonic"
+
+# Filter by type
+curl -H "Authorization: Bearer $TOKEN" "http://localhost:8081/api/v1/assets/search?type=PC"
+
+# Filter by status
+curl -H "Authorization: Bearer $TOKEN" "http://localhost:8081/api/v1/assets/search?status=IN_USE"
+
+# Filter by manufacturer
+curl -H "Authorization: Bearer $TOKEN" "http://localhost:8081/api/v1/assets/search?manufacturer=HP"
+
+# Combined filters
+curl -H "Authorization: Bearer $TOKEN" "http://localhost:8081/api/v1/assets/search?type=PC&status=IN_USE"
+
+# Search with pagination
+curl -H "Authorization: Bearer $TOKEN" "http://localhost:8081/api/v1/assets/search?limit=5&offset=0"
+
+# Sort by different fields
+curl -H "Authorization: Bearer $TOKEN" "http://localhost:8081/api/v1/assets/search?sort_by=date_purchased&sort_order=DESC"
+
+# Find assets that need service
+curl -H "Authorization: Bearer $TOKEN" "http://localhost:8081/api/v1/assets/search?needs_service=true"
