@@ -132,3 +132,15 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8081/api/v1/service-logs
 
 # Check that asset service dates were updated
 curl -H "Authorization: Bearer $TOKEN" http://localhost:8081/api/v1/assets/1
+
+# Test the bulk assignment
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": 7,
+    "asset_ids": [1, 3]
+  }' \
+  http://localhost:8081/api/v1/assets/bulk-assign
+
+  # Test the user assets endpoint (now at /api/v1/users/{id}/assets)
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8081/api/v1/users/7/assets

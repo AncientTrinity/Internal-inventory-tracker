@@ -222,3 +222,147 @@ type AssetFilter struct {
 	Status  string
 	InUseBy *int64
 }
+
+
+// AssignAsset assigns an asset to a user
+func (m *AssetsModel) AssignAsset(assetID, userID int64) error {
+	// Verify user exists
+	var userExists bool
+	err := m.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)", userID).Scan(&userExists)
+	if err != nil {
+		return err
+	}
+	if !userExists {
+		return errors.New("user not found")
+	}
+
+	query := `
+		UPDATE assets 
+		SET in_use_by = $1, status = 'IN_USE', updated_at = NOW()
+		WHERE id = $2 AND (status != 'RETIRED' AND status != 'REPAIR')
+		RETURNING updated_at
+	`
+	
+	var updatedAt time.Time
+	err = m.DB.QueryRow(query, userID, assetID).Scan(&updatedAt)
+	if err == sql.ErrNoRows {
+		return errors.New("asset not found or cannot be assigned (might be retired or in repair)")
+	}
+	return err
+}
+
+// UnassignAsset removes user assignment from an asset
+func (m *AssetsModel) UnassignAsset(assetID int64) error {
+	query := `
+		UPDATE assets 
+		SET in_use_by = NULL, status = 'IN_STORAGE', updated_at = NOW()
+		WHERE id = $1
+		RETURNING updated_at
+	`
+	
+	var updatedAt time.Time
+	err := m.DB.QueryRow(query, assetID).Scan(&updatedAt)
+	if err == sql.ErrNoRows {
+		return errors.New("asset not found")
+	}
+	return err
+}
+
+// GetAssetsByUser gets all assets assigned to a specific user
+func (m *AssetsModel) GetAssetsByUser(userID int64) ([]Asset, error) {
+	query := `
+		SELECT 
+			id, internal_id, asset_type, manufacturer, model, model_number,
+			serial_number, status, in_use_by, date_purchased, last_service_date,
+			next_service_date, created_at, updated_at
+		FROM assets 
+		WHERE in_use_by = $1
+		ORDER BY asset_type, internal_id
+	`
+	
+	rows, err := m.DB.Query(query, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	
+	var assets []Asset
+	for rows.Next() {
+		var asset Asset
+		err := rows.Scan(
+			&asset.ID,
+			&asset.InternalID,
+			&asset.AssetType,
+			&asset.Manufacturer,
+			&asset.Model,
+			&asset.ModelNumber,
+			&asset.SerialNumber,
+			&asset.Status,
+			&asset.InUseBy,
+			&asset.DatePurchased,
+			&asset.LastServiceDate,
+			&asset.NextServiceDate,
+			&asset.CreatedAt,
+			&asset.UpdatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		assets = append(assets, asset)
+	}
+	
+	return assets, nil
+}
+
+// GetAvailableAssets gets assets that are not assigned to any user
+func (m *AssetsModel) GetAvailableAssets(assetType string) ([]Asset, error) {
+	query := `
+		SELECT 
+			id, internal_id, asset_type, manufacturer, model, model_number,
+			serial_number, status, in_use_by, date_purchased, last_service_date,
+			next_service_date, created_at, updated_at
+		FROM assets 
+		WHERE in_use_by IS NULL AND status = 'IN_STORAGE'
+	`
+	
+	args := []interface{}{}
+	if assetType != "" {
+		query += " AND asset_type = $1"
+		args = append(args, assetType)
+	}
+	
+	query += " ORDER BY asset_type, internal_id"
+	
+	rows, err := m.DB.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	
+	var assets []Asset
+	for rows.Next() {
+		var asset Asset
+		err := rows.Scan(
+			&asset.ID,
+			&asset.InternalID,
+			&asset.AssetType,
+			&asset.Manufacturer,
+			&asset.Model,
+			&asset.ModelNumber,
+			&asset.SerialNumber,
+			&asset.Status,
+			&asset.InUseBy,
+			&asset.DatePurchased,
+			&asset.LastServiceDate,
+			&asset.NextServiceDate,
+			&asset.CreatedAt,
+			&asset.UpdatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		assets = append(assets, asset)
+	}
+	
+	return assets, nil
+}

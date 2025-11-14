@@ -18,14 +18,16 @@ func NewServer(db *sql.DB, cfg *config.Config) *http.Server {
 	}
 
 	// Initialize handlers with config
-	usersHandler := handlers.NewUsersHandler(db)
-	rolesHandler := handlers.NewRolesHandler(db)
-	assetsHandler := handlers.NewAssetsHandler(db)
-	assetServiceHandler := handlers.NewAssetServiceHandler(db)
-	authHandler := handlers.NewAuthHandler(db, cfg.JWTSecret)
+	usersHandler := handlers.NewUsersHandler(db)// New users handler
+	rolesHandler := handlers.NewRolesHandler(db)// New roles handler
+	assetsHandler := handlers.NewAssetsHandler(db)// New assets handler
+	assetServiceHandler := handlers.NewAssetServiceHandler(db)// New asset service handler
+	assetAssignmentHandler := handlers.NewAssetAssignmentHandler(db) // New asset assignment handler
+	authHandler := handlers.NewAuthHandler(db, cfg.JWTSecret)// New auth handler
 
 	// Register routes using handlers and JWT secret
-	router := routes.RegisterRoutes(usersHandler, rolesHandler, assetsHandler, assetServiceHandler, authHandler, cfg.JWTSecret)
+	router := routes.RegisterRoutes(usersHandler, rolesHandler, assetsHandler, assetServiceHandler, assetAssignmentHandler,
+		                           authHandler, cfg.JWTSecret) // Register routes
 
 	return &http.Server{
 		Addr:         ":" + port,
@@ -33,5 +35,5 @@ func NewServer(db *sql.DB, cfg *config.Config) *http.Server {
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  120 * time.Second,
-	}
+	}// Return configured server
 }
