@@ -18,8 +18,11 @@ func NewServer(db *sql.DB, cfg *config.Config) *http.Server {
 		port = "8081"
 	}
 
+	// Initialize email service
+	emailService := services.NewEmailService(cfg)
+
 	// Initialize handlers with config
-	usersHandler := handlers.NewUsersHandler(db)// New users handler
+	usersHandler := handlers.NewUsersHandler(db, emailService)// New users handler with email service
 	rolesHandler := handlers.NewRolesHandler(db)// New roles handler
 	assetsHandler := handlers.NewAssetsHandler(db)// New assets handler
 	assetServiceHandler := handlers.NewAssetServiceHandler(db)// New asset service handler

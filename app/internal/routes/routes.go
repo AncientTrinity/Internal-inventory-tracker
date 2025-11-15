@@ -61,6 +61,10 @@ func RegisterRoutes(
 				
 				// Delete user - Admin only
 				r.With(authMiddleware.RequirePermission("users:delete")).Delete("/", usersHandler.DeleteUser)// Delete user
+				
+                r.With(authMiddleware.RequirePermission("users:update")).Post("/send-credentials", usersHandler.SendCredentials)
+
+				
 
 				r.With(authMiddleware.RequirePermission("assets:read")).Get("/assets", assetAssignmentHandler.GetUserAssets)
 			})
