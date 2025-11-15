@@ -9,17 +9,20 @@ import (
 
 	"victortillett.net/internal-inventory-tracker/internal/models"
 	"victortillett.net/internal-inventory-tracker/internal/middleware"
+	//"victortillett.net/internal-inventory-tracker/internal/services"
 )
 
 type TicketCommentsHandler struct {
 	CommentModel *models.TicketCommentModel
 	TicketModel  *models.TicketModel
+	EmailService  *services.EmailService
 }
 
 func NewTicketCommentsHandler(db *sql.DB) *TicketCommentsHandler {
 	return &TicketCommentsHandler{
 		CommentModel: models.NewTicketCommentModel(db),
 		TicketModel:  models.NewTicketModel(db),
+		EmailService: emailService,
 	}
 }
 
@@ -86,9 +89,13 @@ func (h *TicketCommentsHandler) CreateComment(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	//send email notification to ticket watchers
+	go h.sendCommentNotification(comment, ticketID)
+
 	w.WriteHeader(http.StatusCreated)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(comment)
+
 }
 
 // GET /api/v1/tickets/{id}/comments
@@ -238,3 +245,64 @@ func (h *TicketCommentsHandler) DeleteComment(w http.ResponseWriter, r *http.Req
 
 	w.WriteHeader(http.StatusNoContent)
 }
+
+// sendCommentNotification sends email notifications to ticket watchers about a new comment
+func (h *TicketCommentsHandler) sendCommentNotification(comment *models.TicketComment, ticketID int64) {
+	// Get ticket details
+	ticket, err := h.TicketModel.GetByID(ticketID)
+	if err != nil {
+		return
+	}
+
+	// Get comment author info
+	var authorUsername string
+	if comment.AuthorID != nil {
+		h.TicketModel.DB.QueryRow(
+			"SELECT username FROM users WHERE id = $1", 
+			comment.AuthorID,
+		).Scan(&authorUsername)
+	}
+
+	// Notify ticket creator (if different from comment author)
+	if ticket.CreatedBy != nil && (comment.AuthorID == nil || *ticket.CreatedBy != *comment.AuthorID) {
+		var creatorEmail string
+		err := h.TicketModel.DB.QueryRow(
+			"SELECT email FROM users WHERE id = $1", 
+			ticket.CreatedBy,
+		).Scan(&creatorEmail)
+		
+		if err == nil && creatorEmail != "" {
+			h.EmailService.SendTicketCommentEmail(
+				creatorEmail,
+				ticket.TicketNum,
+				ticket.Title,
+				comment.Comment,
+				authorUsername,
+			)
+		}
+	}
+
+	// Notify assigned user (if different from comment author and creator)
+	if ticket.AssignedTo != nil && 
+	   (comment.AuthorID == nil || *ticket.AssignedTo != *comment.AuthorID) &&
+	   (ticket.CreatedBy == nil || *ticket.AssignedTo != *ticket.CreatedBy) {
+		
+		var assigneeEmail string
+		err := h.TicketModel.DB.QueryRow(
+			"SELECT email FROM users WHERE id = $1", 
+			ticket.AssignedTo,
+		).Scan(&assigneeEmail)
+		
+		if err == nil && assigneeEmail != "" {
+			h.EmailService.SendTicketCommentEmail(
+				assigneeEmail,
+				ticket.TicketNum,
+				ticket.Title,
+				comment.Comment,
+				authorUsername,
+			)
+		}
+	}
+}
+
+// End of file app/internal/handlers/ticket_comments.go

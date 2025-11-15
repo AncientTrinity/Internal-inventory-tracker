@@ -9,12 +9,14 @@ import (
 
 	"victortillett.net/internal-inventory-tracker/internal/middleware"
 	"victortillett.net/internal-inventory-tracker/internal/models"
+	"victortillett.net/internal-inventory-tracker/internal/services"
 )
 
 type TicketsHandler struct {
 	TicketModel *models.TicketModel
 	UsersModel  *models.UsersModel
 	AssetsModel *models.AssetsModel
+	EmailService *services.EmailService
 }
 
 func NewTicketsHandler(db *sql.DB) *TicketsHandler {
@@ -22,6 +24,7 @@ func NewTicketsHandler(db *sql.DB) *TicketsHandler {
 		TicketModel: models.NewTicketModel(db),
 		UsersModel:  models.NewUsersModel(db),
 		AssetsModel: models.NewAssetsModel(db),
+		EmailService: emailService,
 	}
 }
 
@@ -535,4 +538,176 @@ func (h *TicketsHandler) GetTicketStats(w http.ResponseWriter, r *http.Request) 
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(stats)
+}
+
+
+// For email notifications,
+// POST /api/v1/tickets/{id}/status - Add email notifications
+func (h *TicketsHandler) UpdateTicketStatus(w http.ResponseWriter, r *http.Request) {
+	idStr := strings.TrimPrefix(r.URL.Path, "/api/v1/tickets/")
+	idStr = strings.TrimSuffix(idStr, "/status")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		http.Error(w, "Invalid ticket ID", http.StatusBadRequest)
+		return
+	}
+
+	// Get current user info for email
+	userID, ok := r.Context().Value(middleware.ContextUserID).(int)
+	if !ok {
+		http.Error(w, `{"error": "Unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+
+	var currentUserEmail, currentUsername string
+	err = h.TicketModel.DB.QueryRow(
+		"SELECT email, username FROM users WHERE id = $1", 
+		userID,
+	).Scan(&currentUserEmail, &currentUsername)
+	if err != nil {
+		// Log but don't fail the request
+		fmt.Printf("Warning: Could not get current user info: %v\n", err)
+	}
+
+	// Get current ticket state for comparison
+	currentTicket, err := h.TicketModel.GetByID(id)
+	if err != nil {
+		if err.Error() == "ticket not found" {
+			http.Error(w, "Ticket not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+
+	var input struct {
+		Status      string `json:"status"`
+		Completion  int    `json:"completion"`
+		AssignedTo  *int64 `json:"assigned_to"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, "Invalid input: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Validate status transition
+	validStatuses := map[string]bool{
+		"open": true, "received": true, "in_progress": true, 
+		"resolved": true, "closed": true,
+	}
+	if !validStatuses[input.Status] {
+		http.Error(w, "Invalid status", http.StatusBadRequest)
+		return
+	}
+
+	// Validate completion percentage
+	if input.Completion < 0 || input.Completion > 100 {
+		http.Error(w, "Completion must be between 0 and 100", http.StatusBadRequest)
+		return
+	}
+
+	// Validate assigned user exists if provided
+	if input.AssignedTo != nil {
+		var userExists bool
+		err := h.TicketModel.DB.QueryRow(
+			"SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)", 
+			input.AssignedTo,
+		).Scan(&userExists)
+		if err != nil || !userExists {
+			http.Error(w, "Assigned user not found", http.StatusBadRequest)
+			return
+		}
+	}
+
+	// Update ticket status
+	err = h.TicketModel.UpdateStatus(id, input.Status, input.Completion, input.AssignedTo)
+	if err != nil {
+		if err.Error() == "ticket not found" {
+			http.Error(w, "Ticket not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Get updated ticket
+	updatedTicket, err := h.TicketModel.GetByID(id)
+	if err != nil {
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+
+	// Send email notifications (in background goroutine)
+	go h.sendStatusUpdateEmails(currentTicket, updatedTicket, currentUsername)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"message": "Ticket status updated successfully",
+		"ticket":  updatedTicket,
+	})
+}
+
+// sendStatusUpdateEmails handles all email notifications for ticket updates
+func (h *TicketsHandler) sendStatusUpdateEmails(oldTicket, newTicket *models.Ticket, updatedBy string) {
+	// Notify assigned user if assignment changed
+	if newTicket.AssignedTo != nil && (oldTicket.AssignedTo == nil || *oldTicket.AssignedTo != *newTicket.AssignedTo) {
+		var assigneeEmail string
+		err := h.TicketModel.DB.QueryRow(
+			"SELECT email FROM users WHERE id = $1", 
+			newTicket.AssignedTo,
+		).Scan(&assigneeEmail)
+		
+		if err == nil && assigneeEmail != "" {
+			h.EmailService.SendTicketAssignedEmail(
+				assigneeEmail,
+				newTicket.TicketNum,
+				newTicket.Title,
+				updatedBy,
+			)
+		}
+	}
+
+	// Notify about status change
+	if oldTicket.Status != newTicket.Status {
+		// Notify ticket creator
+		if newTicket.CreatedBy != nil {
+			var creatorEmail string
+			err := h.TicketModel.DB.QueryRow(
+				"SELECT email FROM users WHERE id = $1", 
+				newTicket.CreatedBy,
+			).Scan(&creatorEmail)
+			
+			if err == nil && creatorEmail != "" {
+				h.EmailService.SendTicketStatusUpdateEmail(
+					creatorEmail,
+					newTicket.TicketNum,
+					newTicket.Title,
+					oldTicket.Status,
+					newTicket.Status,
+					updatedBy,
+				)
+			}
+		}
+
+		// Notify assigned user (if different from creator)
+		if newTicket.AssignedTo != nil && (newTicket.CreatedBy == nil || *newTicket.AssignedTo != *newTicket.CreatedBy) {
+			var assigneeEmail string
+			err := h.TicketModel.DB.QueryRow(
+				"SELECT email FROM users WHERE id = $1", 
+				newTicket.AssignedTo,
+			).Scan(&assigneeEmail)
+			
+			if err == nil && assigneeEmail != "" {
+				h.EmailService.SendTicketStatusUpdateEmail(
+					assigneeEmail,
+					newTicket.TicketNum,
+					newTicket.Title,
+					oldTicket.Status,
+					newTicket.Status,
+					updatedBy,
+				)
+			}
+		}
+	}
 }
