@@ -17,6 +17,8 @@ type TicketsHandler struct {
 	UsersModel  *models.UsersModel
 	AssetsModel *models.AssetsModel
 	EmailService *services.EmailService
+	NotificationService  *services.NotificationService
+
 }
 
 func NewTicketsHandler(db *sql.DB) *TicketsHandler {
@@ -24,6 +26,7 @@ func NewTicketsHandler(db *sql.DB) *TicketsHandler {
 		TicketModel: models.NewTicketModel(db),
 		UsersModel:  models.NewUsersModel(db),
 		AssetsModel: models.NewAssetsModel(db),
+		NotificationService: services.NewNotificationService(db)
 		EmailService: emailService,
 	}
 }
@@ -207,12 +210,17 @@ func (h *TicketsHandler) CreateTicket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Send notifications for new ticket
+	go func() {
+		if err := h.NotificationService.NotifyTicketCreated(ticket); err != nil {
+			fmt.Printf("Failed to send notifications: %v\n", err)
+	}
+
 	w.WriteHeader(http.StatusCreated)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(ticket)
 }
 
-// PUT /api/v1/tickets/{id}
 // PUT /api/v1/tickets/{id}
 func (h *TicketsHandler) UpdateTicket(w http.ResponseWriter, r *http.Request) {
 	idStr := strings.TrimPrefix(r.URL.Path, "/api/v1/tickets/")
@@ -315,6 +323,16 @@ func (h *TicketsHandler) UpdateTicket(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Database error", http.StatusInternalServerError)
 		return
 	}
+
+	// Get current user for notification context
+	userID, _ := r.Context().Value(middleware.ContextUserID).(int)
+	
+	// Send notifications for ticket update
+	go func() {
+		if err := h.NotificationService.NotifyTicketCreated(ticket); err != nil {
+			fmt.Printf("Failed to send notifications: %v\n", err)
+		}
+	}()
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(updatedTicket)

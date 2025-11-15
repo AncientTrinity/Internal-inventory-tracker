@@ -64,3 +64,34 @@ WHERE r.name = 'agent' AND p.name = 'tickets:read';
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id FROM roles r, permissions p 
 WHERE r.name = 'viewer' AND p.name IN ('assets:read', 'tickets:read');
+
+-- Add notification permissions
+INSERT INTO permissions (name, resource, action, description) VALUES
+('notifications:read', 'notifications', 'read', 'View notifications'),
+('notifications:update', 'notifications', 'update', 'Mark notifications as read');
+
+-- Assign notification permissions to roles
+-- Admin: all permissions
+INSERT INTO role_permissions (role_id, permission_id)
+SELECT r.id, p.id FROM roles r, permissions p 
+WHERE r.name = 'admin' AND p.name IN ('notifications:read', 'notifications:update');
+
+-- IT Staff: all notification permissions
+INSERT INTO role_permissions (role_id, permission_id)
+SELECT r.id, p.id FROM roles r, permissions p 
+WHERE r.name = 'it' AND p.name IN ('notifications:read', 'notifications:update');
+
+-- Staff: read notifications only
+INSERT INTO role_permissions (role_id, permission_id)
+SELECT r.id, p.id FROM roles r, permissions p 
+WHERE r.name = 'staff' AND p.name = 'notifications:read';
+
+-- Agents: read notifications only  
+INSERT INTO role_permissions (role_id, permission_id)
+SELECT r.id, p.id FROM roles r, permissions p 
+WHERE r.name = 'agent' AND p.name = 'notifications:read';
+
+-- Viewers: read notifications only
+INSERT INTO role_permissions (role_id, permission_id)
+SELECT r.id, p.id FROM roles r, permissions p 
+WHERE r.name = 'viewer' AND p.name = 'notifications:read';

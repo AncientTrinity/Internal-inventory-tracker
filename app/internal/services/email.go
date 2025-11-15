@@ -79,9 +79,9 @@ Welcome to the Internal Inventory Tracker system!
 
 Your account has been created successfully.
 Username: %s
-Temporary Password: %s
+Password: %s
 
-Please log in and change your password immediately.
+
 
 Best regards,
 IT Support Team

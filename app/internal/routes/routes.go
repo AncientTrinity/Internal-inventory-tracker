@@ -19,6 +19,7 @@ func RegisterRoutes(
 	assetSearchHandler *handlers.AssetSearchHandler,// new asset search handler
 	ticketsHandler *handlers.TicketsHandler, //tickets handler
 	ticketCommentsHandler *handlers.TicketCommentsHandler, // ticket comments handler
+	notificationsHandler *handlers.NotificationsHandler, // notifications handler
 	authHandler *handlers.AuthHandler,// new auth handler
 	jwtSecret string,
 ) http.Handler {
@@ -62,8 +63,9 @@ func RegisterRoutes(
 				// Delete user - Admin only
 				r.With(authMiddleware.RequirePermission("users:delete")).Delete("/", usersHandler.DeleteUser)// Delete user
 				
-                r.With(authMiddleware.RequirePermission("users:update")).Post("/send-credentials", usersHandler.SendCredentials)
-
+               // Credentials and password management (Admin/IT only)
+		r.With(authMiddleware.RequirePermission("users:update")).Post("/send-credentials", usersHandler.SendCredentials)
+		r.With(authMiddleware.RequirePermission("users:update")).Post("/reset-password", usersHandler.ResetPassword)
 				
 
 				r.With(authMiddleware.RequirePermission("assets:read")).Get("/assets", assetAssignmentHandler.GetUserAssets)
@@ -150,6 +152,18 @@ func RegisterRoutes(
 		})
 	})
 
+	})
+
+	//notifications routes
+	protected.Route("/api/v1/notifications", func(r chi.Router) {
+		r.With(authMiddleware.RequirePermission("notifications:read")).Get("/", notificationsHandler.GetNotifications)
+		r.With(authMiddleware.RequirePermission("notifications:read")).Get("/unread-count", notificationsHandler.GetUnreadCount)
+		r.With(authMiddleware.RequirePermission("notifications:read")).Get("/types", notificationsHandler.GetNotificationTypes)
+		r.With(authMiddleware.RequirePermission("notifications:update")).Put("/read-all", notificationsHandler.MarkAllAsRead)
+		
+		r.Route("/{id}", func(r chi.Router) {
+			r.With(authMiddleware.RequirePermission("notifications:update")).Put("/read", notificationsHandler.MarkAsRead)
+		})
 	})
 
 	return r

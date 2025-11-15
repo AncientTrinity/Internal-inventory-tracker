@@ -14,11 +14,13 @@ import (
 
 type AssetsHandler struct {
 	Model *models.AssetsModel
+	NotificationService *services.NotificationService
 }
 
 func NewAssetsHandler(db *sql.DB) *AssetsHandler {
 	return &AssetsHandler{
 		Model: models.NewAssetsModel(db),
+		NotificationService: services.NewNotificationService(db),
 	}
 }
 
@@ -163,6 +165,13 @@ func (h *AssetsHandler) CreateAsset(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Asset with this internal ID already exists", http.StatusBadRequest)
 			return
 		}
+
+		go func() {
+		if err := h.NotificationService.NotifyAssetCreated(asset); err != nil {
+			fmt.Printf("Failed to send asset notifications: %v\n", err)
+		}
+	}()
+
 		http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
 		return
 	}

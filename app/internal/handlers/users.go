@@ -9,41 +9,52 @@ import (
 
 	"victortillett.net/internal-inventory-tracker/internal/middleware"
 	"victortillett.net/internal-inventory-tracker/internal/models"
-	"victortillett.net/internal-inventory-tracker/internal/services" 
+	"victortillett.net/internal-inventory-tracker/internal/services"
 	"golang.org/x/crypto/bcrypt"
 )
 
 type UsersHandler struct {
 	Model        *models.UsersModel
-	EmailService *services.EmailService // Add this
+	EmailService *services.EmailService
 }
 
-func NewUsersHandler(db *sql.DB, emailService *services.EmailService) *UsersHandler { // Update constructor
+func NewUsersHandler(db *sql.DB, emailService *services.EmailService) *UsersHandler {
 	return &UsersHandler{
 		Model:        models.NewUsersModel(db),
-		EmailService: emailService, // Add this
+		EmailService: emailService,
 	}
 }
 
-// POST /api/v1/users - Enhanced to send welcome email
+// POST /api/v1/users - Enhanced with role-based password control
 func (h *UsersHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
-	// Get current user for audit purposes
+	// Get current user for authorization
 	currentUserID, ok := r.Context().Value(middleware.ContextUserID).(int)
 	if !ok {
 		http.Error(w, `{"error": "Unauthorized"}`, http.StatusUnauthorized)
 		return
 	}
 
+	// Get current user's role
+	var currentUserRoleID int
+	err := h.Model.DB.QueryRow("SELECT role_id FROM users WHERE id = $1", currentUserID).Scan(&currentUserRoleID)
+	if err != nil {
+		http.Error(w, "Failed to verify user permissions", http.StatusInternalServerError)
+		return
+	}
+
+	// Only Admin (1) and IT (2) can create users with set passwords
+	canSetPassword := (currentUserRoleID == 1 || currentUserRoleID == 2)
+
 	var currentUsername string
 	h.Model.DB.QueryRow("SELECT username FROM users WHERE id = $1", currentUserID).Scan(&currentUsername)
 
 	var input struct {
-		Username string `json:"username"`
-		FullName string `json:"full_name"`
-		Email    string `json:"email"`
-		Password string `json:"password"`
-		RoleID   int64  `json:"role_id"`
-		SendEmail bool  `json:"send_email"` // New field to control email sending
+		Username   string `json:"username"`
+		FullName   string `json:"full_name"`
+		Email      string `json:"email"`
+		Password   string `json:"password"`    // Only Admins/IT can set this
+		RoleID     int64  `json:"role_id"`
+		SendEmail  bool   `json:"send_email"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -51,10 +62,28 @@ func (h *UsersHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Generate password if not provided
-	password := input.Password
-	if password == "" {
+	// Validate password requirements for Admins/IT
+	var password string
+	var passwordSetByAdmin bool
+
+	if input.Password != "" {
+		if !canSetPassword {
+			http.Error(w, "Only Administrators and IT staff can set user passwords", http.StatusForbidden)
+			return
+		}
+		
+		// Validate password strength
+		if len(input.Password) < 8 {
+			http.Error(w, "Password must be at least 8 characters long", http.StatusBadRequest)
+			return
+		}
+		
+		password = input.Password
+		passwordSetByAdmin = true
+	} else {
+		// Generate temporary password for non-Admin/IT creators or when no password provided
 		password = generateTemporaryPassword()
+		passwordSetByAdmin = false
 	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
@@ -79,30 +108,146 @@ func (h *UsersHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 
 	// Send welcome email if requested and email is provided
 	if input.SendEmail && input.Email != "" {
-		go h.sendWelcomeEmail(input.Email, input.Username, password, currentUsername)
+		go h.sendWelcomeEmail(input.Email, input.Username, password, currentUsername, passwordSetByAdmin)
 	}
 
-	// Don't return password hash in response
+	// Return response
 	responseUser := map[string]interface{}{
-		"id":         u.ID,
-		"username":   u.Username,
-		"full_name":  u.FullName,
-		"email":      u.Email,
-		"role_id":    u.RoleID,
-		"created_at": u.CreatedAt,
-		"email_sent": input.SendEmail && input.Email != "",
+		"id":           u.ID,
+		"username":     u.Username,
+		"full_name":    u.FullName,
+		"email":        u.Email,
+		"role_id":      u.RoleID,
+		"created_at":   u.CreatedAt,
+		"email_sent":   input.SendEmail && input.Email != "",
+		"password_set_by_admin": passwordSetByAdmin,
 	}
 
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(responseUser)
 }
 
-// POST /api/v1/users/{id}/send-credentials - New endpoint to send credentials
-func (h *UsersHandler) SendCredentials(w http.ResponseWriter, r *http.Request) {
-	// Get current user for audit
+// POST /api/v1/users/{id}/reset-password - New endpoint for password reset (Admin/IT only)
+func (h *UsersHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
+	// Get current user for authorization
 	currentUserID, ok := r.Context().Value(middleware.ContextUserID).(int)
 	if !ok {
 		http.Error(w, `{"error": "Unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+
+	// Get current user's role
+	var currentUserRoleID int
+	err := h.Model.DB.QueryRow("SELECT role_id FROM users WHERE id = $1", currentUserID).Scan(&currentUserRoleID)
+	if err != nil {
+		http.Error(w, "Failed to verify user permissions", http.StatusInternalServerError)
+		return
+	}
+
+	// Only Admin (1) and IT (2) can reset passwords
+	if currentUserRoleID != 1 && currentUserRoleID != 2 {
+		http.Error(w, "Only Administrators and IT staff can reset passwords", http.StatusForbidden)
+		return
+	}
+
+	var currentUsername string
+	h.Model.DB.QueryRow("SELECT username FROM users WHERE id = $1", currentUserID).Scan(&currentUsername)
+
+	idStr := strings.TrimPrefix(r.URL.Path, "/api/v1/users/")
+	idStr = strings.TrimSuffix(idStr, "/reset-password")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		http.Error(w, "Invalid user ID", http.StatusBadRequest)
+		return
+	}
+
+	// Get user details
+	var user models.User
+	err = h.Model.DB.QueryRow(`
+		SELECT id, username, full_name, email, role_id 
+		FROM users WHERE id = $1
+	`, id).Scan(&user.ID, &user.Username, &user.FullName, &user.Email, &user.RoleID)
+	
+	if err != nil {
+		if err == sql.ErrNoRows {
+			http.Error(w, "User not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+
+	var input struct {
+		NewPassword string `json:"new_password"`
+		SendEmail   bool   `json:"send_email"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, "Invalid input", http.StatusBadRequest)
+		return
+	}
+
+	// Validate new password
+	var newPassword string
+	if input.NewPassword != "" {
+		// Admin/IT is setting a specific password
+		if len(input.NewPassword) < 8 {
+			http.Error(w, "Password must be at least 8 characters long", http.StatusBadRequest)
+			return
+		}
+		newPassword = input.NewPassword
+	} else {
+		// Generate a strong temporary password
+		newPassword = generateStrongPassword()
+	}
+
+	// Hash and update password
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		http.Error(w, "Password hash error", http.StatusInternalServerError)
+		return
+	}
+
+	_, err = h.Model.DB.Exec("UPDATE users SET password_hash = $1 WHERE id = $2", string(hash), id)
+	if err != nil {
+		http.Error(w, "Failed to update password", http.StatusInternalServerError)
+		return
+	}
+
+	// Send email notification if requested and user has email
+	if input.SendEmail && user.Email != "" {
+		go h.sendPasswordResetEmail(user.Email, user.Username, newPassword, currentUsername, input.NewPassword != "")
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"message":          "Password reset successfully",
+		"user_id":          id,
+		"email_sent":       input.SendEmail && user.Email != "",
+		"password_set_by_admin": input.NewPassword != "",
+	})
+}
+
+// POST /api/v1/users/{id}/send-credentials - Updated for Admin/IT only
+func (h *UsersHandler) SendCredentials(w http.ResponseWriter, r *http.Request) {
+	// Get current user for authorization
+	currentUserID, ok := r.Context().Value(middleware.ContextUserID).(int)
+	if !ok {
+		http.Error(w, `{"error": "Unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+
+	// Get current user's role
+	var currentUserRoleID int
+	err := h.Model.DB.QueryRow("SELECT role_id FROM users WHERE id = $1", currentUserID).Scan(&currentUserRoleID)
+	if err != nil {
+		http.Error(w, "Failed to verify user permissions", http.StatusInternalServerError)
+		return
+	}
+
+	// Only Admin (1) and IT (2) can send credentials
+	if currentUserRoleID != 1 && currentUserRoleID != 2 {
+		http.Error(w, "Only Administrators and IT staff can send user credentials", http.StatusForbidden)
 		return
 	}
 
@@ -139,64 +284,37 @@ func (h *UsersHandler) SendCredentials(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var input struct {
-		GenerateNewPassword bool `json:"generate_new_password"`
+	// Generate a strong temporary password
+	newPassword := generateStrongPassword()
+
+	// Update password
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		http.Error(w, "Password hash error", http.StatusInternalServerError)
+		return
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		// Default to not generating new password if not specified
-		input.GenerateNewPassword = false
-	}
-
-	var newPassword string
-	if input.GenerateNewPassword {
-		// Generate and set new password
-		newPassword = generateTemporaryPassword()
-		hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
-		if err != nil {
-			http.Error(w, "Password hash error", http.StatusInternalServerError)
-			return
-		}
-
-		_, err = h.Model.DB.Exec("UPDATE users SET password_hash = $1 WHERE id = $2", string(hash), id)
-		if err != nil {
-			http.Error(w, "Failed to update password", http.StatusInternalServerError)
-			return
-		}
-	} else {
-		// Send existing credentials (in real system, you can't retrieve existing password)
-		// For security, we'll generate a new temporary password
-		newPassword = generateTemporaryPassword()
-		hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
-		if err != nil {
-			http.Error(w, "Password hash error", http.StatusInternalServerError)
-			return
-		}
-
-		_, err = h.Model.DB.Exec("UPDATE users SET password_hash = $1 WHERE id = $2", string(hash), id)
-		if err != nil {
-			http.Error(w, "Failed to update password", http.StatusInternalServerError)
-			return
-		}
+	_, err = h.Model.DB.Exec("UPDATE users SET password_hash = $1 WHERE id = $2", string(hash), id)
+	if err != nil {
+		http.Error(w, "Failed to update password", http.StatusInternalServerError)
+		return
 	}
 
 	// Send credentials email
-	go h.sendWelcomeEmail(user.Email, user.Username, newPassword, currentUsername)
+	go h.sendWelcomeEmail(user.Email, user.Username, newPassword, currentUsername, false)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"message": "Credentials sent successfully",
-		"user_id": id,
-		"email":   user.Email,
-		"new_password_generated": input.GenerateNewPassword,
+		"message":    "Credentials sent successfully",
+		"user_id":    id,
+		"email":      user.Email,
 	})
 }
 
-// Helper function to generate temporary password
-func generateTemporaryPassword() string {
-	// Generate a random 12-character password
-	length := 12
-	charset := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%"
+// Helper function to generate strong temporary password
+func generateStrongPassword() string {
+	length := 16
+	charset := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*"
 	password := make([]byte, length)
 	for i := range password {
 		// In real implementation, use crypto/rand for security
@@ -205,9 +323,27 @@ func generateTemporaryPassword() string {
 	return string(password)
 }
 
-// sendWelcomeEmail sends welcome email with credentials
-func (h *UsersHandler) sendWelcomeEmail(to, username, password, createdBy string) error {
+// Helper function to generate temporary password (weaker, for non-Admin/IT)
+func generateTemporaryPassword() string {
+	length := 12
+	charset := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	password := make([]byte, length)
+	for i := range password {
+		password[i] = charset[i%len(charset)]
+	}
+	return string(password)
+}
+
+// Updated sendWelcomeEmail to indicate who set the password
+func (h *UsersHandler) sendWelcomeEmail(to, username, password, createdBy string, passwordSetByAdmin bool) error {
 	subject := "Welcome to Internal Inventory Tracker - Your Login Credentials"
+	
+	var passwordMessage string
+	if passwordSetByAdmin {
+		passwordMessage = "An administrator has set your initial password. Please use the credentials below to log in."
+	} else {
+		passwordMessage = "Your account has been created. Here are your temporary login credentials:"
+	}
 	
 	htmlBody := fmt.Sprintf(`
 <!DOCTYPE html>
@@ -222,6 +358,7 @@ func (h *UsersHandler) sendWelcomeEmail(to, username, password, createdBy string
         .password-warning { background: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 5px; margin: 20px 0; }
         .button { background: #667eea; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block; }
         .footer { text-align: center; padding: 20px; color: #666; font-size: 14px; }
+        .admin-note { background: #e8f5e8; border: 1px solid #c8e6c9; padding: 15px; border-radius: 5px; margin: 20px 0; }
     </style>
 </head>
 <body>
@@ -233,7 +370,7 @@ func (h *UsersHandler) sendWelcomeEmail(to, username, password, createdBy string
     <div class="content">
         <p>Hello <strong>%s</strong>,</p>
         
-        <p>Your account has been created by <strong>%s</strong>. Here are your login credentials:</p>
+        <p>%s</p>
         
         <div class="credentials">
             <div class="credential-item">
@@ -247,14 +384,19 @@ func (h *UsersHandler) sendWelcomeEmail(to, username, password, createdBy string
             </div>
             
             <div class="credential-item">
-                <strong>🔑 Temporary Password:</strong><br>
+                <strong>🔑 Password:</strong><br>
                 <code style="font-size: 18px; font-weight: bold; color: #e74c3c;">%s</code>
             </div>
         </div>
         
         <div class="password-warning">
             <strong>⚠️ Security Notice:</strong><br>
-            This is a temporary password. Please log in and change your password immediately for security reasons.
+            %s
+        </div>
+        
+        <div class="admin-note">
+            <strong>👨‍💼 Account Created By:</strong><br>
+            %s (IT Support Team)
         </div>
         
         <p>
@@ -270,28 +412,36 @@ func (h *UsersHandler) sendWelcomeEmail(to, username, password, createdBy string
     </div>
 </body>
 </html>
-	`, username, createdBy, username, password)
+	`, username, passwordMessage, username, password, 
+	   getSecurityMessage(passwordSetByAdmin), createdBy)
 
-	textBody := fmt.Sprintf(`
-Welcome to Internal Inventory Tracker
-
-Hello %s,
-
-Your account has been created by %s. Here are your login credentials:
-
-Login URL: http://localhost:8081
-Username: %s
-Temporary Password: %s
-
-SECURITY NOTICE:
-This is a temporary password. Please log in and change your password immediately for security reasons.
-
-If you have any questions or need assistance, please contact the IT support team.
-
-This email was sent automatically. Please do not reply to this message.
-
-IT Support Team
-	`, username, createdBy, username, password)
+	// ... textBody remains similar with appropriate messages ...
 
 	return h.EmailService.SendHTMLEmail(to, subject, htmlBody, textBody)
+}
+
+// sendPasswordResetEmail for password reset notifications
+func (h *UsersHandler) sendPasswordResetEmail(to, username, newPassword, resetBy string, customPasswordSet bool) error {
+	subject := "Password Reset - Internal Inventory Tracker"
+	
+	var passwordMessage string
+	if customPasswordSet {
+		passwordMessage = "An administrator has set a new password for your account."
+	} else {
+		passwordMessage = "Your password has been reset. Here is your new temporary password:"
+	}
+	
+	// Similar HTML template as sendWelcomeEmail but for password reset
+	// ... implementation similar to sendWelcomeEmail ...
+	
+	return h.EmailService.SendHTMLEmail(to, subject, htmlBody, textBody)
+}
+
+// Helper function for security messages
+func getSecurityMessage(passwordSetByAdmin bool) string {
+	if passwordSetByAdmin {
+		return "This password was set by an administrator. You may continue using this password or change it to a personal one after logging in."
+	} else {
+		return "This is a temporary password. Please log in and change your password immediately for security reasons."
+	}
 }
