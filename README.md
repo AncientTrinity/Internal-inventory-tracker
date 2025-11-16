@@ -92,9 +92,6 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
   http://localhost:8081/api/v1/tickets
 
 
-# Rebuild your application
-docker compose up --build
-
 # Test 1: Admin creates user with custom password
 echo "=== Test 1: Admin Creates User with Custom Password ==="
 curl -X POST -H "Authorization: Bearer $TOKEN" \
@@ -134,5 +131,3 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{}' \
   http://localhost:8081/api/v1/users/5/send-credentials
-
-# Check Mailpit at http://localhost:8025 to see different email types!
