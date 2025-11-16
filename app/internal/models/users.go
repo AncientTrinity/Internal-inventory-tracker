@@ -59,3 +59,62 @@ func (m *UsersModel) Delete(id int64) error {
 	}
 	return nil
 }
+
+// ADD THESE MISSING METHODS:
+
+// GetAll returns all users
+func (m *UsersModel) GetAll() ([]User, error) {
+	rows, err := m.DB.Query(`
+		SELECT id, username, full_name, email, role_id, created_at 
+		FROM users 
+		ORDER BY id
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var users []User
+	for rows.Next() {
+		var user User
+		err := rows.Scan(
+			&user.ID,
+			&user.Username,
+			&user.FullName,
+			&user.Email,
+			&user.RoleID,
+			&user.CreatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		users = append(users, user)
+	}
+
+	return users, nil
+}
+
+// GetByID returns a user by ID
+func (m *UsersModel) GetByID(id int64) (*User, error) {
+	var user User
+	err := m.DB.QueryRow(`
+		SELECT id, username, full_name, email, role_id, created_at 
+		FROM users 
+		WHERE id = $1
+	`, id).Scan(
+		&user.ID,
+		&user.Username,
+		&user.FullName,
+		&user.Email,
+		&user.RoleID,
+		&user.CreatedAt,
+	)
+
+	if err == sql.ErrNoRows {
+		return nil, errors.New("user not found")
+	} else if err != nil {
+		return nil, err
+	}
+
+	return &user, nil
+}

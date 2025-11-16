@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"fmt"
 
 	"victortillett.net/internal-inventory-tracker/internal/middleware"
 	"victortillett.net/internal-inventory-tracker/internal/models"
@@ -126,6 +127,118 @@ func (h *UsersHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(responseUser)
 }
+
+// GET /api/v1/users - List users (Admin and IT only)
+func (h *UsersHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
+    users, err := h.Model.GetAll()
+    if err != nil {
+        http.Error(w, "Database error", http.StatusInternalServerError) 
+        return
+    }
+    
+    w.Header().Set("Content-Type", "application/json")
+    json.NewEncoder(w).Encode(users)
+}
+func (h *UsersHandler) GetUser(w http.ResponseWriter, r *http.Request) {
+    idStr := strings.TrimPrefix(r.URL.Path, "/api/v1/users/")
+    id, err := strconv.ParseInt(idStr, 10, 64)
+    if err != nil {
+        http.Error(w, "Invalid user ID", http.StatusBadRequest)
+        return
+    }
+    
+    user, err := h.Model.GetByID(id)
+    if err != nil {
+        if err.Error() == "user not found" {
+            http.Error(w, "User not found", http.StatusNotFound)
+            return
+        }
+        http.Error(w, "Database error", http.StatusInternalServerError)
+        return
+    }
+    
+    w.Header().Set("Content-Type", "application/json")
+    json.NewEncoder(w).Encode(user)
+}
+
+// PUT /api/v1/users/{id}
+func (h *UsersHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
+    idStr := strings.TrimPrefix(r.URL.Path, "/api/v1/users/")
+    id, err := strconv.ParseInt(idStr, 10, 64)
+    if err != nil {
+        http.Error(w, "Invalid user ID", http.StatusBadRequest)
+        return
+    }
+    
+    var input struct {
+        Username string `json:"username"`
+        FullName string `json:"full_name"`
+        Email    string `json:"email"`
+        RoleID   int64  `json:"role_id"`
+    }
+    
+    if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+        http.Error(w, "Invalid input", http.StatusBadRequest)
+        return
+    }
+    
+    // Get existing user
+    existingUser, err := h.Model.GetByID(id)
+    if err != nil {
+        if err.Error() == "user not found" {
+            http.Error(w, "User not found", http.StatusNotFound)
+            return
+        }
+        http.Error(w, "Database error", http.StatusInternalServerError)
+        return
+    }
+    
+    // Update fields
+    if input.Username != "" {
+        existingUser.Username = input.Username
+    }
+    if input.FullName != "" {
+        existingUser.FullName = input.FullName
+    }
+    if input.Email != "" {
+        existingUser.Email = input.Email
+    }
+    if input.RoleID != 0 {
+        existingUser.RoleID = input.RoleID
+    }
+    
+    err = h.Model.Update(existingUser)
+    if err != nil {
+        http.Error(w, "Database error", http.StatusInternalServerError)
+        return
+    }
+    
+    w.Header().Set("Content-Type", "application/json")
+    json.NewEncoder(w).Encode(existingUser)
+}
+
+// DELETE /api/v1/users/{id}
+func (h *UsersHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
+    idStr := strings.TrimPrefix(r.URL.Path, "/api/v1/users/")
+    id, err := strconv.ParseInt(idStr, 10, 64)
+    if err != nil {
+        http.Error(w, "Invalid user ID", http.StatusBadRequest)
+        return
+    }
+    
+    err = h.Model.Delete(id)
+    if err != nil {
+        if err.Error() == "user not found" {
+            http.Error(w, "User not found", http.StatusNotFound)
+            return
+        }
+        http.Error(w, "Database error", http.StatusInternalServerError)
+        return
+    }
+    
+    w.WriteHeader(http.StatusNoContent)
+}
+
 
 // POST /api/v1/users/{id}/reset-password - New endpoint for password reset (Admin/IT only)
 func (h *UsersHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
@@ -334,18 +447,126 @@ func generateTemporaryPassword() string {
 	return string(password)
 }
 
-// Updated sendWelcomeEmail to indicate who set the password
-func (h *UsersHandler) sendWelcomeEmail(to, username, password, createdBy string, passwordSetByAdmin bool) error {
-	subject := "Welcome to Internal Inventory Tracker - Your Login Credentials"
+// Updated sendPasswordResetEmail to indicate who set the password
+func (h *UsersHandler) sendPasswordResetEmail(to, username, newPassword, resetBy string, customPasswordSet bool) error {
+	subject := "Password Reset - Internal Inventory Tracker"
 	
 	var passwordMessage string
-	if passwordSetByAdmin {
-		passwordMessage = "An administrator has set your initial password. Please use the credentials below to log in."
+	if customPasswordSet {
+		passwordMessage = "An administrator has set a new password for your account."
 	} else {
-		passwordMessage = "Your account has been created. Here are your temporary login credentials:"
+		passwordMessage = "Your password has been reset. Here is your new temporary password:"
 	}
 	
+	// HTML template for password reset
 	htmlBody := fmt.Sprintf(`
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .header { background: linear-gradient(135deg, #667eea 0%%, #764ba2 100%%); color: white; padding: 30px; text-align: center; }
+        .content { padding: 30px; background: #f9f9f9; }
+        .credentials { background: white; padding: 25px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin: 20px 0; }
+        .credential-item { margin: 15px 0; padding: 12px; background: #f8f9fa; border-left: 4px solid #667eea; }
+        .password-warning { background: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 5px; margin: 20px 0; }
+        .button { background: #667eea; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block; }
+        .footer { text-align: center; padding: 20px; color: #666; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Password Reset</h1>
+        <p>Your password has been updated</p>
+    </div>
+    
+    <div class="content">
+        <p>Hello <strong>%s</strong>,</p>
+        
+        <p>%s</p>
+        
+        <div class="credentials">
+            <div class="credential-item">
+                <strong>🔗 Login URL:</strong><br>
+                <a href="http://localhost:8081">http://localhost:8081</a>
+            </div>
+            
+            <div class="credential-item">
+                <strong>👤 Username:</strong><br>
+                %s
+            </div>
+            
+            <div class="credential-item">
+                <strong>🔑 New Password:</strong><br>
+                <code style="font-size: 18px; font-weight: bold; color: #e74c3c;">%s</code>
+            </div>
+        </div>
+        
+        <div class="password-warning">
+            <strong>⚠️ Security Notice:</strong><br>
+            Please log in and change your password immediately for security reasons.
+        </div>
+        
+        <p>
+            <a href="http://localhost:8081" class="button">Login to System</a>
+        </p>
+        
+        <p>If you have any questions or need assistance, please contact the IT support team.</p>
+    </div>
+    
+    <div class="footer">
+        <p>This email was sent automatically. Please do not reply to this message.</p>
+        <p>IT Support Team</p>
+    </div>
+</body>
+</html>
+	`, username, passwordMessage, username, newPassword)
+
+	// Text version
+	textBody := fmt.Sprintf(`
+Password Reset - Internal Inventory Tracker
+
+Hello %s,
+
+%s
+
+Login URL: http://localhost:8081
+Username: %s
+New Password: %s
+
+Security Notice: Please log in and change your password immediately for security reasons.
+
+If you have any questions or need assistance, please contact the IT support team.
+
+This email was sent automatically. Please do not reply to this message.
+IT Support Team
+	`, username, passwordMessage, username, newPassword)
+
+	return h.EmailService.SendHTMLEmail(to, subject, htmlBody, textBody)
+}
+
+// Helper function to get security message based on who set the password
+func getSecurityMessage(passwordSetByAdmin bool) string {
+	if passwordSetByAdmin {
+		return "This password was set by an administrator. You may continue using this password."
+	} else {
+		return "This is a  password set by the Ariston. Please Contact IT Support to change it. "
+	}
+}
+
+
+// Updated sendWelcomeEmail to indicate who set the password
+func (h *UsersHandler) sendWelcomeEmail(to, username, password, createdBy string, passwordSetByAdmin bool) error {
+    subject := "Welcome to Internal Inventory Tracker - Your Login Credentials"
+    
+    var passwordMessage string
+    if passwordSetByAdmin {
+        passwordMessage = "An administrator has set your initial password. Please use the credentials below to log in."
+    } else {
+        passwordMessage = "Your account has been created. Here are your temporary login credentials:"
+    }
+    
+    htmlBody := fmt.Sprintf(`
 <!DOCTYPE html>
 <html>
 <head>
@@ -412,36 +633,30 @@ func (h *UsersHandler) sendWelcomeEmail(to, username, password, createdBy string
     </div>
 </body>
 </html>
-	`, username, passwordMessage, username, password, 
-	   getSecurityMessage(passwordSetByAdmin), createdBy)
+    `, username, passwordMessage, username, password, 
+       getSecurityMessage(passwordSetByAdmin), createdBy)
 
-	// ... textBody remains similar with appropriate messages ...
+    textBody := fmt.Sprintf(`
+Welcome to Internal Inventory Tracker
 
-	return h.EmailService.SendHTMLEmail(to, subject, htmlBody, textBody)
-}
+Hello %s,
 
-// sendPasswordResetEmail for password reset notifications
-func (h *UsersHandler) sendPasswordResetEmail(to, username, newPassword, resetBy string, customPasswordSet bool) error {
-	subject := "Password Reset - Internal Inventory Tracker"
-	
-	var passwordMessage string
-	if customPasswordSet {
-		passwordMessage = "An administrator has set a new password for your account."
-	} else {
-		passwordMessage = "Your password has been reset. Here is your new temporary password:"
-	}
-	
-	// Similar HTML template as sendWelcomeEmail but for password reset
-	// ... implementation similar to sendWelcomeEmail ...
-	
-	return h.EmailService.SendHTMLEmail(to, subject, htmlBody, textBody)
-}
+%s
 
-// Helper function for security messages
-func getSecurityMessage(passwordSetByAdmin bool) string {
-	if passwordSetByAdmin {
-		return "This password was set by an administrator. You may continue using this password or change it to a personal one after logging in."
-	} else {
-		return "This is a temporary password. Please log in and change your password immediately for security reasons."
-	}
+Login URL: http://localhost:8081
+Username: %s
+Password: %s
+
+%s
+
+Account Created By: %s (IT Support Team)
+
+If you have any questions or need assistance, please contact the IT support team.
+
+This email was sent automatically. Please do not reply to this message.
+IT Support Team
+    `, username, passwordMessage, username, password, 
+       getSecurityMessage(passwordSetByAdmin), createdBy)
+
+    return h.EmailService.SendHTMLEmail(to, subject, htmlBody, textBody)
 }

@@ -46,12 +46,14 @@ func (es *EnhancedEmailService) sendSingleEmail(to, subject, body string) error 
 		from, to, subject, time.Now().Format(time.RFC1123Z), body,
 	))
 
-	// Authentication
+	// Smart authentication - only use credentials if provided
 	var auth smtp.Auth
 	if es.config.SMTPUsername != "" && es.config.SMTPPassword != "" {
+		// Use authentication for real SMTP servers
 		auth = smtp.PlainAuth("", es.config.SMTPUsername, es.config.SMTPPassword, es.config.SMTPHost)
 	} else {
-		auth = smtp.PlainAuth("", "", "", es.config.SMTPHost)
+		// No authentication for Mailpit/local development
+		auth = nil
 	}
 	
 	return smtp.SendMail(

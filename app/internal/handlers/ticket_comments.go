@@ -9,7 +9,7 @@ import (
 
 	"victortillett.net/internal-inventory-tracker/internal/models"
 	"victortillett.net/internal-inventory-tracker/internal/middleware"
-	//"victortillett.net/internal-inventory-tracker/internal/services"
+	"victortillett.net/internal-inventory-tracker/internal/services"
 )
 
 type TicketCommentsHandler struct {
@@ -18,13 +18,14 @@ type TicketCommentsHandler struct {
 	EmailService  *services.EmailService
 }
 
-func NewTicketCommentsHandler(db *sql.DB) *TicketCommentsHandler {
+func NewTicketCommentsHandler(db *sql.DB, emailService *services.EmailService) *TicketCommentsHandler {
 	return &TicketCommentsHandler{
 		CommentModel: models.NewTicketCommentModel(db),
 		TicketModel:  models.NewTicketModel(db),
-		EmailService: emailService,
+		EmailService: emailService, // FIXED: Use the parameter
 	}
 }
+
 
 // POST /api/v1/tickets/{id}/comments
 func (h *TicketCommentsHandler) CreateComment(w http.ResponseWriter, r *http.Request) {

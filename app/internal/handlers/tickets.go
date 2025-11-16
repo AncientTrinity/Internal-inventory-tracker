@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"fmt"
 
 	"victortillett.net/internal-inventory-tracker/internal/middleware"
 	"victortillett.net/internal-inventory-tracker/internal/models"
@@ -18,16 +19,15 @@ type TicketsHandler struct {
 	AssetsModel *models.AssetsModel
 	EmailService *services.EmailService
 	NotificationService  *services.NotificationService
-
 }
 
-func NewTicketsHandler(db *sql.DB) *TicketsHandler {
+func NewTicketsHandler(db *sql.DB, emailService *services.EmailService) *TicketsHandler {
 	return &TicketsHandler{
 		TicketModel: models.NewTicketModel(db),
 		UsersModel:  models.NewUsersModel(db),
 		AssetsModel: models.NewAssetsModel(db),
-		NotificationService: services.NewNotificationService(db)
-		EmailService: emailService,
+		NotificationService: services.NewNotificationService(db),
+		EmailService: emailService, // FIXED: Use the parameter
 	}
 }
 
@@ -210,141 +210,164 @@ func (h *TicketsHandler) CreateTicket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Send notifications for new ticket
-	go func() {
-		if err := h.NotificationService.NotifyTicketCreated(ticket); err != nil {
-			fmt.Printf("Failed to send notifications: %v\n", err)
-	}
-
-	w.WriteHeader(http.StatusCreated)
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(ticket)
-}
-
-// PUT /api/v1/tickets/{id}
-func (h *TicketsHandler) UpdateTicket(w http.ResponseWriter, r *http.Request) {
-	idStr := strings.TrimPrefix(r.URL.Path, "/api/v1/tickets/")
-	id, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil {
-		http.Error(w, "Invalid ticket ID", http.StatusBadRequest)
-		return
-	}
-
-	// Get current user from context
-	userID, ok := r.Context().Value(middleware.ContextUserID).(int)
-	if !ok {
-		http.Error(w, `{"error": "Unauthorized"}`, http.StatusUnauthorized)
-		return
-	}
-
-	roleID, ok := r.Context().Value(middleware.ContextRoleID).(int)
-	if !ok {
-		http.Error(w, `{"error": "Unauthorized"}`, http.StatusUnauthorized)
-		return
-	}
-
-	// Get existing ticket
-	existingTicket, err := h.TicketModel.GetByID(id)
-	if err != nil {
-		if err.Error() == "ticket not found" {
-			http.Error(w, "Ticket not found", http.StatusNotFound)
-			return
-		}
-		http.Error(w, "Database error", http.StatusInternalServerError)
-		return
-	}
-
-	// Authorization check - only allow updates if:
-	// - User is admin (roleID 1)
-	// - User is IT staff (roleID 2) and ticket is assigned to them or unassigned
-	// - User created the ticket (for non-IT roles)
-	switch roleID {
-	case 1: // Admin - can update any ticket
-		// No restrictions
-	case 2: // IT Staff - can update tickets assigned to them or unassigned tickets
-		if existingTicket.AssignedTo != nil && *existingTicket.AssignedTo != int64(userID) {
-			http.Error(w, "Forbidden: You can only update tickets assigned to you", http.StatusForbidden)
-			return
-		}
-	default: // Other roles - can only update tickets they created
-		if existingTicket.CreatedBy == nil || *existingTicket.CreatedBy != int64(userID) {
-			http.Error(w, "Forbidden: You can only update tickets you created", http.StatusForbidden)
-			return
-		}
-	}
-
-	var input struct {
-		Title       string `json:"title"`
-		Description string `json:"description"`
-		Type        string `json:"type"`
-		Priority    string `json:"priority"`
-		AssetID     *int64 `json:"asset_id"`
-		IsInternal  bool   `json:"is_internal"`
-	}
-
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		http.Error(w, "Invalid input: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	// Update fields (only if provided)
-	if input.Title != "" {
-		existingTicket.Title = input.Title
-	}
-	if input.Description != "" {
-		existingTicket.Description = input.Description
-	}
-	if input.Type != "" {
-		existingTicket.Type = input.Type
-	}
-	if input.Priority != "" {
-		existingTicket.Priority = input.Priority
-	}
-	if input.AssetID != nil {
-		// Validate asset exists
-		_, err := h.AssetsModel.GetByID(*input.AssetID)
-		if err != nil {
-			http.Error(w, "Asset not found", http.StatusBadRequest)
-			return
-		}
-		existingTicket.AssetID = input.AssetID
-	}
-	existingTicket.IsInternal = input.IsInternal
-
-	err = h.TicketModel.Update(existingTicket)
-	if err != nil {
-		http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	// Get updated ticket
-	updatedTicket, err := h.TicketModel.GetByID(id)
-	if err != nil {
-		http.Error(w, "Database error", http.StatusInternalServerError)
-		return
-	}
-
-	// Get current user for notification context
-	userID, _ := r.Context().Value(middleware.ContextUserID).(int)
-	
-	// Send notifications for ticket update
+	// FIXED: Send notifications for new ticket
 	go func() {
 		if err := h.NotificationService.NotifyTicketCreated(ticket); err != nil {
 			fmt.Printf("Failed to send notifications: %v\n", err)
 		}
 	}()
 
+	w.WriteHeader(http.StatusCreated)
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(updatedTicket)
+	json.NewEncoder(w).Encode(ticket)
 }
 
-// POST /api/v1/tickets/{id}/status
+func (h *TicketsHandler) UpdateTicket(w http.ResponseWriter, r *http.Request) {
+    idStr := strings.TrimPrefix(r.URL.Path, "/api/v1/tickets/")
+    id, err := strconv.ParseInt(idStr, 10, 64)
+    if err != nil {
+        http.Error(w, "Invalid ticket ID", http.StatusBadRequest)
+        return
+    }
+
+    // Get current user from context
+    userID, ok := r.Context().Value(middleware.ContextUserID).(int)
+    if !ok {
+        http.Error(w, `{"error": "Unauthorized"}`, http.StatusUnauthorized)
+        return
+    }
+
+    roleID, ok := r.Context().Value(middleware.ContextRoleID).(int)
+    if !ok {
+        http.Error(w, `{"error": "Unauthorized"}`, http.StatusUnauthorized)
+        return
+    }
+
+    // Get existing ticket
+    existingTicket, err := h.TicketModel.GetByID(id)
+    if err != nil {
+        if err.Error() == "ticket not found" {
+            http.Error(w, "Ticket not found", http.StatusNotFound)
+            return
+        }
+        http.Error(w, "Database error", http.StatusInternalServerError)
+        return
+    }
+
+    // Authorization check
+    switch roleID {
+    case 1: // Admin - can update any ticket
+        // No restrictions
+    case 2: // IT Staff - can update tickets assigned to them or unassigned tickets
+        if existingTicket.AssignedTo != nil && *existingTicket.AssignedTo != int64(userID) {
+            http.Error(w, "Forbidden: You can only update tickets assigned to you", http.StatusForbidden)
+            return
+        }
+    default: // Other roles - can only update tickets they created
+        if existingTicket.CreatedBy == nil || *existingTicket.CreatedBy != int64(userID) {
+            http.Error(w, "Forbidden: You can only update tickets you created", http.StatusForbidden)
+            return
+        }
+    }
+
+    var input struct {
+        Title       string `json:"title"`
+        Description string `json:"description"`
+        Type        string `json:"type"`
+        Priority    string `json:"priority"`
+        AssetID     *int64 `json:"asset_id"`
+        IsInternal  bool   `json:"is_internal"`
+    }
+
+    if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+        http.Error(w, "Invalid input: "+err.Error(), http.StatusBadRequest)
+        return
+    }
+
+    // Update fields (only if provided)
+    if input.Title != "" {
+        existingTicket.Title = input.Title
+    }
+    if input.Description != "" {
+        existingTicket.Description = input.Description
+    }
+    if input.Type != "" {
+        existingTicket.Type = input.Type
+    }
+    if input.Priority != "" {
+        existingTicket.Priority = input.Priority
+    }
+    if input.AssetID != nil {
+        // Validate asset exists
+        _, err := h.AssetsModel.GetByID(*input.AssetID)
+        if err != nil {
+            http.Error(w, "Asset not found", http.StatusBadRequest)
+            return
+        }
+        existingTicket.AssetID = input.AssetID
+    }
+    existingTicket.IsInternal = input.IsInternal
+
+    err = h.TicketModel.Update(existingTicket)
+    if err != nil {
+        http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
+        return
+    }
+
+    // Get updated ticket
+    updatedTicket, err := h.TicketModel.GetByID(id)
+    if err != nil {
+        http.Error(w, "Database error", http.StatusInternalServerError)
+        return
+    }
+
+    // Send notifications for ticket update
+    go func() {
+        if err := h.NotificationService.NotifyTicketUpdated(updatedTicket, int64(userID), "updated"); err != nil {
+            fmt.Printf("Failed to send notifications: %v\n", err)
+        }
+    }()
+
+    w.Header().Set("Content-Type", "application/json")
+    json.NewEncoder(w).Encode(updatedTicket)
+}
+
+
+// PUT /api/v1/tickets/{id}
 func (h *TicketsHandler) UpdateTicketStatus(w http.ResponseWriter, r *http.Request) {
 	idStr := strings.TrimPrefix(r.URL.Path, "/api/v1/tickets/")
 	idStr = strings.TrimSuffix(idStr, "/status")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
 		http.Error(w, "Invalid ticket ID", http.StatusBadRequest)
+		return
+	}
+
+	// Get current user info for email
+	userID, ok := r.Context().Value(middleware.ContextUserID).(int)
+	if !ok {
+		http.Error(w, `{"error": "Unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+
+	var currentUserEmail, currentUsername string
+	err = h.TicketModel.DB.QueryRow(
+		"SELECT email, username FROM users WHERE id = $1", 
+		userID,
+	).Scan(&currentUserEmail, &currentUsername)
+	if err != nil {
+		// Log but don't fail the request
+		fmt.Printf("Warning: Could not get current user info: %v\n", err)
+	}
+
+	// Get current ticket state for comparison
+	currentTicket, err := h.TicketModel.GetByID(id)
+	if err != nil {
+		if err.Error() == "ticket not found" {
+			http.Error(w, "Ticket not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "Database error", http.StatusInternalServerError)
 		return
 	}
 
@@ -405,6 +428,9 @@ func (h *TicketsHandler) UpdateTicketStatus(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "Database error", http.StatusInternalServerError)
 		return
 	}
+
+	// Send email notifications (in background goroutine)
+	go h.sendStatusUpdateEmails(currentTicket, updatedTicket, currentUsername)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -556,114 +582,6 @@ func (h *TicketsHandler) GetTicketStats(w http.ResponseWriter, r *http.Request) 
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(stats)
-}
-
-
-// For email notifications,
-// POST /api/v1/tickets/{id}/status - Add email notifications
-func (h *TicketsHandler) UpdateTicketStatus(w http.ResponseWriter, r *http.Request) {
-	idStr := strings.TrimPrefix(r.URL.Path, "/api/v1/tickets/")
-	idStr = strings.TrimSuffix(idStr, "/status")
-	id, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil {
-		http.Error(w, "Invalid ticket ID", http.StatusBadRequest)
-		return
-	}
-
-	// Get current user info for email
-	userID, ok := r.Context().Value(middleware.ContextUserID).(int)
-	if !ok {
-		http.Error(w, `{"error": "Unauthorized"}`, http.StatusUnauthorized)
-		return
-	}
-
-	var currentUserEmail, currentUsername string
-	err = h.TicketModel.DB.QueryRow(
-		"SELECT email, username FROM users WHERE id = $1", 
-		userID,
-	).Scan(&currentUserEmail, &currentUsername)
-	if err != nil {
-		// Log but don't fail the request
-		fmt.Printf("Warning: Could not get current user info: %v\n", err)
-	}
-
-	// Get current ticket state for comparison
-	currentTicket, err := h.TicketModel.GetByID(id)
-	if err != nil {
-		if err.Error() == "ticket not found" {
-			http.Error(w, "Ticket not found", http.StatusNotFound)
-			return
-		}
-		http.Error(w, "Database error", http.StatusInternalServerError)
-		return
-	}
-
-	var input struct {
-		Status      string `json:"status"`
-		Completion  int    `json:"completion"`
-		AssignedTo  *int64 `json:"assigned_to"`
-	}
-
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		http.Error(w, "Invalid input: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	// Validate status transition
-	validStatuses := map[string]bool{
-		"open": true, "received": true, "in_progress": true, 
-		"resolved": true, "closed": true,
-	}
-	if !validStatuses[input.Status] {
-		http.Error(w, "Invalid status", http.StatusBadRequest)
-		return
-	}
-
-	// Validate completion percentage
-	if input.Completion < 0 || input.Completion > 100 {
-		http.Error(w, "Completion must be between 0 and 100", http.StatusBadRequest)
-		return
-	}
-
-	// Validate assigned user exists if provided
-	if input.AssignedTo != nil {
-		var userExists bool
-		err := h.TicketModel.DB.QueryRow(
-			"SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)", 
-			input.AssignedTo,
-		).Scan(&userExists)
-		if err != nil || !userExists {
-			http.Error(w, "Assigned user not found", http.StatusBadRequest)
-			return
-		}
-	}
-
-	// Update ticket status
-	err = h.TicketModel.UpdateStatus(id, input.Status, input.Completion, input.AssignedTo)
-	if err != nil {
-		if err.Error() == "ticket not found" {
-			http.Error(w, "Ticket not found", http.StatusNotFound)
-			return
-		}
-		http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	// Get updated ticket
-	updatedTicket, err := h.TicketModel.GetByID(id)
-	if err != nil {
-		http.Error(w, "Database error", http.StatusInternalServerError)
-		return
-	}
-
-	// Send email notifications (in background goroutine)
-	go h.sendStatusUpdateEmails(currentTicket, updatedTicket, currentUsername)
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"message": "Ticket status updated successfully",
-		"ticket":  updatedTicket,
-	})
 }
 
 // sendStatusUpdateEmails handles all email notifications for ticket updates

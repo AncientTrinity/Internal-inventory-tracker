@@ -10,6 +10,7 @@ import (
 	"fmt"
 
 	"victortillett.net/internal-inventory-tracker/internal/models"
+	"victortillett.net/internal-inventory-tracker/internal/services"
 )
 
 type AssetsHandler struct {

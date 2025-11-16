@@ -64,8 +64,8 @@ func RegisterRoutes(
 				r.With(authMiddleware.RequirePermission("users:delete")).Delete("/", usersHandler.DeleteUser)// Delete user
 				
                // Credentials and password management (Admin/IT only)
-		r.With(authMiddleware.RequirePermission("users:update")).Post("/send-credentials", usersHandler.SendCredentials)
-		r.With(authMiddleware.RequirePermission("users:update")).Post("/reset-password", usersHandler.ResetPassword)
+				r.With(authMiddleware.RequirePermission("users:update")).Post("/send-credentials", usersHandler.SendCredentials)
+				r.With(authMiddleware.RequirePermission("users:update")).Post("/reset-password", usersHandler.ResetPassword)
 				
 
 				r.With(authMiddleware.RequirePermission("assets:read")).Get("/assets", assetAssignmentHandler.GetUserAssets)
@@ -87,84 +87,79 @@ func RegisterRoutes(
        
 		// Assets
 		protected.Route("/api/v1/assets", func(r chi.Router) {
-		r.With(authMiddleware.RequirePermission("assets:read")).Get("/", assetsHandler.ListAssets)// List assets
-		r.With(authMiddleware.RequirePermission("assets:create")).Post("/", assetsHandler.CreateAsset)// Create asset
-		r.With(authMiddleware.RequirePermission("assets:read")).Get("/available", assetAssignmentHandler.GetAvailableAssets) // Available assets
-		r.With(authMiddleware.RequirePermission("assets:update")).Post("/bulk-assign", assetAssignmentHandler.BulkAssignAssets) // Bulk assign assets
-		r.With(authMiddleware.RequirePermission("assets:read")).Get("/search", assetSearchHandler.SearchAssets)// Search assets
-		r.With(authMiddleware.RequirePermission("assets:read")).Get("/stats", assetSearchHandler.GetAssetStats)// Asset stats
-		r.With(authMiddleware.RequirePermission("assets:read")).Get("/types", assetSearchHandler.GetAssetTypes)// Asset types
-		r.With(authMiddleware.RequirePermission("assets:read")).Get("/manufacturers", assetSearchHandler.GetManufacturers)// Manufacturers
-		
-		r.Route("/{id}", func(r chi.Router) {
-			r.With(authMiddleware.RequirePermission("assets:read")).Get("/", assetsHandler.GetAsset)// Get asset
-			r.With(authMiddleware.RequirePermission("assets:update")).Put("/", assetsHandler.UpdateAsset)// Update asset
-			r.With(authMiddleware.RequirePermission("assets:delete")).Delete("/", assetsHandler.DeleteAsset)// Delete asset
-			r.With(authMiddleware.RequirePermission("assets:update")).Post("/assign", assetAssignmentHandler.AssignAsset)// Assign asset
-			r.With(authMiddleware.RequirePermission("assets:update")).Post("/unassign", assetAssignmentHandler.UnassignAsset)// Unassign asset
+			r.With(authMiddleware.RequirePermission("assets:read")).Get("/", assetsHandler.ListAssets)// List assets
+			r.With(authMiddleware.RequirePermission("assets:create")).Post("/", assetsHandler.CreateAsset)// Create asset
+			r.With(authMiddleware.RequirePermission("assets:read")).Get("/available", assetAssignmentHandler.GetAvailableAssets) // Available assets
+			r.With(authMiddleware.RequirePermission("assets:update")).Post("/bulk-assign", assetAssignmentHandler.BulkAssignAssets) // Bulk assign assets
+			r.With(authMiddleware.RequirePermission("assets:read")).Get("/search", assetSearchHandler.SearchAssets)// Search assets
+			r.With(authMiddleware.RequirePermission("assets:read")).Get("/stats", assetSearchHandler.GetAssetStats)// Asset stats
+			r.With(authMiddleware.RequirePermission("assets:read")).Get("/types", assetSearchHandler.GetAssetTypes)// Asset types
+			r.With(authMiddleware.RequirePermission("assets:read")).Get("/manufacturers", assetSearchHandler.GetManufacturers)// Manufacturers
 			
-			// Service logs for specific asset
-			r.Route("/service-logs", func(r chi.Router) {
-				r.With(authMiddleware.RequirePermission("assets:update")).Post("/", assetServiceHandler.CreateServiceLog)// Create service log
-				r.With(authMiddleware.RequirePermission("assets:read")).Get("/", assetServiceHandler.GetServiceLogs)// Get service logs
-
-				//Tickets route
+			r.Route("/{id}", func(r chi.Router) {
+				r.With(authMiddleware.RequirePermission("assets:read")).Get("/", assetsHandler.GetAsset)// Get asset
+				r.With(authMiddleware.RequirePermission("assets:update")).Put("/", assetsHandler.UpdateAsset)// Update asset
+				r.With(authMiddleware.RequirePermission("assets:delete")).Delete("/", assetsHandler.DeleteAsset)// Delete asset
+				r.With(authMiddleware.RequirePermission("assets:update")).Post("/assign", assetAssignmentHandler.AssignAsset)// Assign asset
+				r.With(authMiddleware.RequirePermission("assets:update")).Post("/unassign", assetAssignmentHandler.UnassignAsset)// Unassign asset
 				
+				// Service logs for specific asset
+				r.Route("/service-logs", func(r chi.Router) {
+					r.With(authMiddleware.RequirePermission("assets:update")).Post("/", assetServiceHandler.CreateServiceLog)// Create service log
+					r.With(authMiddleware.RequirePermission("assets:read")).Get("/", assetServiceHandler.GetServiceLogs)// Get service logs
+				})
 			})
 		})
-	})
+
 		// Tickets routes
-	  	protected.Route("/api/v1/tickets", func(r chi.Router) {
-		r.With(authMiddleware.RequirePermission("tickets:read")).Get("/", ticketsHandler.ListTickets)
-		r.With(authMiddleware.RequirePermission("tickets:create")).Post("/", ticketsHandler.CreateTicket)
-		r.With(authMiddleware.RequirePermission("tickets:read")).Get("/stats", ticketsHandler.GetTicketStats)
-		
-		r.Route("/{id}", func(r chi.Router) {
-			r.With(authMiddleware.RequirePermission("tickets:read")).Get("/", ticketsHandler.GetTicket)
-			r.With(authMiddleware.RequirePermission("tickets:update")).Put("/", ticketsHandler.UpdateTicket)
+		protected.Route("/api/v1/tickets", func(r chi.Router) {
+			r.With(authMiddleware.RequirePermission("tickets:read")).Get("/", ticketsHandler.ListTickets)
+			r.With(authMiddleware.RequirePermission("tickets:create")).Post("/", ticketsHandler.CreateTicket)
+			r.With(authMiddleware.RequirePermission("tickets:read")).Get("/stats", ticketsHandler.GetTicketStats)
 			
-			// Ticket status updates
-			r.With(authMiddleware.RequirePermission("tickets:update")).Post("/status", ticketsHandler.UpdateTicketStatus)
-			r.With(authMiddleware.RequirePermission("tickets:assign")).Post("/reassign", ticketsHandler.ReassignTicket)
-			
-			// Ticket comments
-			r.Route("/comments", func(r chi.Router) {
-				r.With(authMiddleware.RequirePermission("tickets:read")).Get("/", ticketCommentsHandler.GetComments)
-				r.With(authMiddleware.RequirePermission("tickets:update")).Post("/", ticketCommentsHandler.CreateComment)
+			r.Route("/{id}", func(r chi.Router) {
+				r.With(authMiddleware.RequirePermission("tickets:read")).Get("/", ticketsHandler.GetTicket)
+				r.With(authMiddleware.RequirePermission("tickets:update")).Put("/", ticketsHandler.UpdateTicket)
+				
+				// Ticket status updates
+				r.With(authMiddleware.RequirePermission("tickets:update")).Post("/status", ticketsHandler.UpdateTicketStatus)
+				r.With(authMiddleware.RequirePermission("tickets:assign")).Post("/reassign", ticketsHandler.ReassignTicket)
+				
+				// Ticket comments
+				r.Route("/comments", func(r chi.Router) {
+					r.With(authMiddleware.RequirePermission("tickets:read")).Get("/", ticketCommentsHandler.GetComments)
+					r.With(authMiddleware.RequirePermission("tickets:update")).Post("/", ticketCommentsHandler.CreateComment)
+				})
 			})
 		})
-	})
 
-
-
-	// Individual service log routes
-	protected.Route("/api/v1/service-logs", func(r chi.Router) {
-		r.Route("/{id}", func(r chi.Router) {
-			r.With(authMiddleware.RequirePermission("assets:read")).Get("/", assetServiceHandler.GetServiceLog)// Get service log
+		// Individual service log routes
+		protected.Route("/api/v1/service-logs", func(r chi.Router) {
+			r.Route("/{id}", func(r chi.Router) {
+				r.With(authMiddleware.RequirePermission("assets:read")).Get("/", assetServiceHandler.GetServiceLog)// Get service log
+			})
 		})
-	})
 
-    	// Individual comment routes
-	protected.Route("/api/v1/comments", func(r chi.Router) {
-		r.Route("/{id}", func(r chi.Router) {
-			r.With(authMiddleware.RequirePermission("tickets:update")).Put("/", ticketCommentsHandler.UpdateComment)
-			r.With(authMiddleware.RequirePermission("tickets:update")).Delete("/", ticketCommentsHandler.DeleteComment)
+		// Individual comment routes
+		protected.Route("/api/v1/comments", func(r chi.Router) {
+			r.Route("/{id}", func(r chi.Router) {
+				r.With(authMiddleware.RequirePermission("tickets:update")).Put("/", ticketCommentsHandler.UpdateComment)
+				r.With(authMiddleware.RequirePermission("tickets:update")).Delete("/", ticketCommentsHandler.DeleteComment)
+			})
 		})
-	})
 
-	})
-
-	//notifications routes
-	protected.Route("/api/v1/notifications", func(r chi.Router) {
-		r.With(authMiddleware.RequirePermission("notifications:read")).Get("/", notificationsHandler.GetNotifications)
-		r.With(authMiddleware.RequirePermission("notifications:read")).Get("/unread-count", notificationsHandler.GetUnreadCount)
-		r.With(authMiddleware.RequirePermission("notifications:read")).Get("/types", notificationsHandler.GetNotificationTypes)
-		r.With(authMiddleware.RequirePermission("notifications:update")).Put("/read-all", notificationsHandler.MarkAllAsRead)
-		
-		r.Route("/{id}", func(r chi.Router) {
-			r.With(authMiddleware.RequirePermission("notifications:update")).Put("/read", notificationsHandler.MarkAsRead)
+		// Notifications routes - MOVED INSIDE the protected group
+		protected.Route("/api/v1/notifications", func(r chi.Router) {
+			r.With(authMiddleware.RequirePermission("notifications:read")).Get("/", notificationsHandler.GetNotifications)
+			r.With(authMiddleware.RequirePermission("notifications:read")).Get("/unread-count", notificationsHandler.GetUnreadCount)
+			r.With(authMiddleware.RequirePermission("notifications:read")).Get("/types", notificationsHandler.GetNotificationTypes)
+			r.With(authMiddleware.RequirePermission("notifications:update")).Put("/read-all", notificationsHandler.MarkAllAsRead)
+			
+			r.Route("/{id}", func(r chi.Router) {
+				r.With(authMiddleware.RequirePermission("notifications:update")).Put("/read", notificationsHandler.MarkAsRead)
+			})
 		})
-	})
+	}) // This closes the protected group
 
 	return r
 }
