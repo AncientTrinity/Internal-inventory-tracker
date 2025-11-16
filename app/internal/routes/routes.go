@@ -25,6 +25,10 @@ func RegisterRoutes(
 ) http.Handler {
 	r := chi.NewRouter()
 
+	// Apply CORS middleware
+	r.Use(middleware.CORS)
+
+
 	// Initialize authorization middleware
 	authMiddleware := middleware.NewAuthorizationMiddleware(usersHandler.Model.DB)
 
@@ -66,6 +70,9 @@ func RegisterRoutes(
                // Credentials and password management (Admin/IT only)
 				r.With(authMiddleware.RequirePermission("users:update")).Post("/send-credentials", usersHandler.SendCredentials)
 				r.With(authMiddleware.RequirePermission("users:update")).Post("/reset-password", usersHandler.ResetPassword)
+
+				//getcurent user profile
+				r.With(authMiddleware.RequirePermission("users:read")).Get("/me", usersHandler.GetCurrentUser)
 				
 
 				r.With(authMiddleware.RequirePermission("assets:read")).Get("/assets", assetAssignmentHandler.GetUserAssets)

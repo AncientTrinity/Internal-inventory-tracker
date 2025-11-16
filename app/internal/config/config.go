@@ -20,7 +20,7 @@ func LoadConfig() Config {
 		Port:               getEnv("PORT", "8081"),
 		DB_DSN:             getEnv("DB_DSN", "postgres://user:password@postgres/mydb?sslmode=disable"),
 		JWTSecret:          getEnv("JWT_SECRET", "supersecretjwtkey"),
-		CORSTrustedOrigins: getEnv("CORS_TRUSTED_ORIGINS", "http://localhost:8080"),
+		CORSTrustedOrigins: getEnv("CORS_TRUSTED_ORIGINS", "http://localhost:8080,http://localhost:3000,http://localhost:53589,http://localhost:*,http://127.0.0.1:*"),
 		SMTPHost:           getEnv("SMTP_HOST", "mailpit"),
 		SMTPPort:           getEnv("SMTP_PORT", "1025"),
 		SMTPFrom:           getEnv("SMTP_FROM", "noreply@example.com"),
