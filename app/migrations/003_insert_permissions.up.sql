@@ -27,6 +27,8 @@ INSERT INTO permissions (name, resource, action, description) VALUES
     ('tickets:update', 'tickets', 'update', 'Update tickets'),
     ('tickets:delete', 'tickets', 'delete', 'Delete tickets'),
     ('tickets:assign', 'tickets', 'assign', 'Assign tickets to users'),
+    ('tickets:verify', 'tickets', 'verify', 'Verify ticket completion'),
+    ('tickets:manage', 'tickets', 'manage', 'Full ticket management'),
     
     -- System permissions
     ('system:admin', 'system', 'admin', 'Full system administration'),
@@ -44,21 +46,30 @@ SELECT r.id, p.id FROM roles r, permissions p
 WHERE r.name = 'it' AND p.name IN (
     'users:read',
     'assets:create', 'assets:read', 'assets:update', 'assets:manage',
-    'tickets:create', 'tickets:read', 'tickets:update', 'tickets:assign'
+    'tickets:create', 'tickets:read', 'tickets:update', 'tickets:assign', 'tickets:manage'
 );
 
--- Staff/Team Leads: ticket and asset viewing
+-- Staff/Team Leads: ticket creation, reading, updating, and verification
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id FROM roles r, permissions p 
 WHERE r.name = 'staff' AND p.name IN (
-    'tickets:read', 'tickets:update',
+    'tickets:create', 
+    'tickets:read', 
+    'tickets:update',
+    'tickets:verify',
     'assets:read'
 );
 
--- Agents: view own tickets only
+-- Agents: view own tickets and assets, create tickets, verify their own tickets
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id FROM roles r, permissions p 
-WHERE r.name = 'agent' AND p.name = 'tickets:read';
+WHERE r.name = 'agent' AND p.name IN (
+    'tickets:create',
+    'tickets:read', 
+    'tickets:update',
+    'tickets:verify',
+    'assets:read'
+);
 
 -- Viewers: read-only access
 INSERT INTO role_permissions (role_id, permission_id)

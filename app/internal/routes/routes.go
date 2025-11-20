@@ -127,10 +127,20 @@ func RegisterRoutes(
 			r.Route("/{id}", func(r chi.Router) {
 				r.With(authMiddleware.RequirePermission("tickets:read")).Get("/", ticketsHandler.GetTicket)
 				r.With(authMiddleware.RequirePermission("tickets:update")).Put("/", ticketsHandler.UpdateTicket)
+				r.With(authMiddleware.RequirePermission("tickets:delete")).Delete("/", ticketsHandler.DeleteTicket)
 				
 				// Ticket status updates
 				r.With(authMiddleware.RequirePermission("tickets:update")).Post("/status", ticketsHandler.UpdateTicketStatus)
 				r.With(authMiddleware.RequirePermission("tickets:assign")).Post("/reassign", ticketsHandler.ReassignTicket)
+
+				// Verification routes
+				// Verification endpoints - allow anyone with tickets:verify permission
+r.With(authMiddleware.RequirePermission("tickets:verify")).Post("/request-verification", ticketsHandler.RequestVerification)
+r.With(authMiddleware.RequirePermission("tickets:verify")).Post("/verify", ticketsHandler.VerifyTicket)
+r.With(authMiddleware.RequirePermission("tickets:manage")).Post("/skip-verification", ticketsHandler.SkipVerification)
+  r.With(authMiddleware.RequirePermission("tickets:verify")).Post("/setup-verification", ticketsHandler.SetupVerification)
+r.With(authMiddleware.RequirePermission("tickets:manage")).Post("/reset-verification", ticketsHandler.ResetVerification)
+
 				
 				// Ticket comments
 				r.Route("/comments", func(r chi.Router) {

@@ -1,3 +1,4 @@
+//app/internal/handlers/tickets.go
 package handlers
 
 import (
@@ -332,6 +333,69 @@ func (h *TicketsHandler) UpdateTicket(w http.ResponseWriter, r *http.Request) {
     json.NewEncoder(w).Encode(updatedTicket)
 }
 
+// DELETE /api/v1/tickets/{id}
+func (h *TicketsHandler) DeleteTicket(w http.ResponseWriter, r *http.Request) {
+	idStr := strings.TrimPrefix(r.URL.Path, "/api/v1/tickets/")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		http.Error(w, "Invalid ticket ID", http.StatusBadRequest)
+		return
+	}
+
+	// Get current user from context
+	userID, ok := r.Context().Value(middleware.ContextUserID).(int)
+	if !ok {
+		http.Error(w, `{"error": "Unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+
+	roleID, ok := r.Context().Value(middleware.ContextRoleID).(int)
+	if !ok {
+		http.Error(w, `{"error": "Unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+
+	// Get existing ticket to check permissions
+	existingTicket, err := h.TicketModel.GetByID(id)
+	if err != nil {
+		if err.Error() == "ticket not found" {
+			http.Error(w, "Ticket not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+
+	// Authorization check - only admin can delete tickets
+	if roleID != 1 { // 1 = Admin
+		http.Error(w, "Forbidden: Only administrators can delete tickets", http.StatusForbidden)
+		return
+	}
+
+	// Delete the ticket
+	err = h.TicketModel.Delete(id)
+	if err != nil {
+		if err.Error() == "ticket not found" {
+			http.Error(w, "Ticket not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Send notification about ticket deletion
+	go func() {
+    fmt.Printf("Ticket #%s (ID: %d) deleted by user %d\n", 
+        existingTicket.TicketNum, existingTicket.ID, userID)
+}()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"message": "Ticket deleted successfully",
+		"ticket_id": id,
+	})
+}
+
 
 // PUT /api/v1/tickets/{id}
 func (h *TicketsHandler) UpdateTicketStatus(w http.ResponseWriter, r *http.Request) {
@@ -646,4 +710,394 @@ func (h *TicketsHandler) sendStatusUpdateEmails(oldTicket, newTicket *models.Tic
 			}
 		}
 	}
+}
+
+// POST /api/v1/tickets/{id}/request-verification
+// POST /api/v1/tickets/{id}/request-verification
+func (h *TicketsHandler) RequestVerification(w http.ResponseWriter, r *http.Request) {
+	idStr := strings.TrimPrefix(r.URL.Path, "/api/v1/tickets/")
+	idStr = strings.TrimSuffix(idStr, "/request-verification")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		http.Error(w, "Invalid ticket ID", http.StatusBadRequest)
+		return
+	}
+
+	// Get current user from context
+	userID, ok := r.Context().Value(middleware.ContextUserID).(int)
+	if !ok {
+		http.Error(w, `{"error": "Unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+
+	roleID, ok := r.Context().Value(middleware.ContextRoleID).(int)
+	if !ok {
+		http.Error(w, `{"error": "Unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+
+	// Get existing ticket
+	existingTicket, err := h.TicketModel.GetByID(id)
+	if err != nil {
+		if err.Error() == "ticket not found" {
+			http.Error(w, "Ticket not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+
+	// Authorization: Only ticket creator OR Admin/IT can request verification
+	canRequest := false
+	if existingTicket.CreatedBy != nil && *existingTicket.CreatedBy == int64(userID) {
+		canRequest = true
+	} else if roleID == 1 || roleID == 2 { // Admin or IT Staff
+		canRequest = true
+	}
+
+	if !canRequest {
+		http.Error(w, "Forbidden: Only ticket creator or administrators can request verification", http.StatusForbidden)
+		return
+	}
+
+	// Check if ticket is in a state that can be verified
+	if existingTicket.Status != "resolved" && existingTicket.Status != "in_progress" {
+		http.Error(w, "Ticket must be resolved or in progress to request verification", http.StatusBadRequest)
+		return
+	}
+
+	var input struct {
+		Notes string `json:"notes"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, "Invalid input: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Request verification
+	err = h.TicketModel.RequestVerification(id, input.Notes)
+	if err != nil {
+		http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Get updated ticket
+	updatedTicket, err := h.TicketModel.GetByID(id)
+	if err != nil {
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+
+	// Send notifications
+	go func() {
+		if err := h.NotificationService.NotifyVerificationRequested(updatedTicket); err != nil {
+			fmt.Printf("Failed to send verification notifications: %v\n", err)
+		}
+	}()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"message": "Verification requested successfully",
+		"ticket":  updatedTicket,
+	})
+}
+
+// POST /api/v1/tickets/{id}/verify
+func (h *TicketsHandler) VerifyTicket(w http.ResponseWriter, r *http.Request) {
+	idStr := strings.TrimPrefix(r.URL.Path, "/api/v1/tickets/")
+	idStr = strings.TrimSuffix(idStr, "/verify")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		http.Error(w, "Invalid ticket ID", http.StatusBadRequest)
+		return
+	}
+
+	// Get current user from context
+	userID, ok := r.Context().Value(middleware.ContextUserID).(int)
+	if !ok {
+		http.Error(w, `{"error": "Unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+
+	roleID, ok := r.Context().Value(middleware.ContextRoleID).(int)
+	if !ok {
+		http.Error(w, `{"error": "Unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+
+	// Check if user can verify this ticket
+	canVerify, err := h.TicketModel.CanVerifyTicket(id, int64(userID), roleID)
+	if err != nil {
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+
+	if !canVerify {
+		http.Error(w, "Forbidden: You cannot verify this ticket", http.StatusForbidden)
+		return
+	}
+
+	// Get existing ticket
+	existingTicket, err := h.TicketModel.GetByID(id)
+	if err != nil {
+		if err.Error() == "ticket not found" {
+			http.Error(w, "Ticket not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+
+	// Check if verification is pending
+	if existingTicket.VerificationStatus != "pending" {
+		http.Error(w, "Ticket is not pending verification", http.StatusBadRequest)
+		return
+	}
+
+	var input struct {
+		Approved bool   `json:"approved"`
+		Notes    string `json:"notes"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, "Invalid input: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Verify ticket
+	err = h.TicketModel.VerifyTicket(id, int64(userID), input.Approved, input.Notes, roleID)
+	if err != nil {
+		http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Get updated ticket
+	updatedTicket, err := h.TicketModel.GetByID(id)
+	if err != nil {
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+
+	// Send notifications
+	go func() {
+		if err := h.NotificationService.NotifyVerificationCompleted(updatedTicket, input.Approved); err != nil {
+			fmt.Printf("Failed to send verification notifications: %v\n", err)
+		}
+	}()
+
+	action := "approved"
+	if !input.Approved {
+		action = "rejected"
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"message": fmt.Sprintf("Verification %s successfully", action),
+		"ticket":  updatedTicket,
+	})
+}
+
+// POST /api/v1/tickets/{id}/skip-verification
+func (h *TicketsHandler) SkipVerification(w http.ResponseWriter, r *http.Request) {
+	idStr := strings.TrimPrefix(r.URL.Path, "/api/v1/tickets/")
+	idStr = strings.TrimSuffix(idStr, "/skip-verification")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		http.Error(w, "Invalid ticket ID", http.StatusBadRequest)
+		return
+	}
+
+	// Get current user from context
+	userID, ok := r.Context().Value(middleware.ContextUserID).(int)
+	if !ok {
+		http.Error(w, `{"error": "Unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+
+	roleID, ok := r.Context().Value(middleware.ContextRoleID).(int)
+	if !ok {
+		http.Error(w, `{"error": "Unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+
+	// Get existing ticket (use the variable to avoid "declared and not used" error)
+	existingTicket, err := h.TicketModel.GetByID(id)
+	if err != nil {
+		if err.Error() == "ticket not found" {
+			http.Error(w, "Ticket not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+
+	// Authorization: Only Admin/IT can skip verification
+	if roleID != 1 && roleID != 2 { // 1=Admin, 2=IT Staff
+		http.Error(w, "Forbidden: Only administrators can skip verification", http.StatusForbidden)
+		return
+	}
+
+	// Skip verification
+	err = h.TicketModel.SkipVerification(id)
+	if err != nil {
+		http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Get updated ticket
+	updatedTicket, err := h.TicketModel.GetByID(id)
+	if err != nil {
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+
+	// Log who skipped verification (using the userID variable)
+	fmt.Printf("Verification skipped for ticket #%s by user %d\n", existingTicket.TicketNum, userID)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"message": "Verification skipped successfully",
+		"ticket":  updatedTicket,
+	})
+}
+
+// POST /api/v1/tickets/{id}/setup-verification
+func (h *TicketsHandler) SetupVerification(w http.ResponseWriter, r *http.Request) {
+	idStr := strings.TrimPrefix(r.URL.Path, "/api/v1/tickets/")
+	idStr = strings.TrimSuffix(idStr, "/setup-verification")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		http.Error(w, "Invalid ticket ID", http.StatusBadRequest)
+		return
+	}
+
+	// Get current user from context
+	userID, ok := r.Context().Value(middleware.ContextUserID).(int)
+	if !ok {
+		http.Error(w, `{"error": "Unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+
+	// Get existing ticket
+	existingTicket, err := h.TicketModel.GetByID(id)
+	if err != nil {
+		if err.Error() == "ticket not found" {
+			http.Error(w, "Ticket not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+
+	// Check if ticket is in a state that can be verified
+	if existingTicket.Status != "resolved" && existingTicket.Status != "in_progress" {
+		http.Error(w, "Ticket must be resolved or in progress to setup verification", http.StatusBadRequest)
+		return
+	}
+
+	// Check if verification is already set
+	if existingTicket.VerificationStatus != "not_required" {
+		http.Error(w, "Verification is already set up for this ticket", http.StatusBadRequest)
+		return
+	}
+
+	var input struct {
+		VerificationStatus string `json:"verification_status"`
+		VerificationNotes  string `json:"verification_notes"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, "Invalid input: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Setup verification
+	err = h.TicketModel.SetupVerification(id, input.VerificationStatus, input.VerificationNotes)
+	if err != nil {
+		http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Get updated ticket
+	updatedTicket, err := h.TicketModel.GetByID(id)
+	if err != nil {
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+
+	// Send notifications
+	go func() {
+		if err := h.NotificationService.NotifyVerificationSetup(updatedTicket, int64(userID)); err != nil {
+			fmt.Printf("Failed to send verification setup notifications: %v\n", err)
+		}
+	}()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"message": "Verification setup successfully",
+		"ticket":  updatedTicket,
+	})
+}
+
+
+// POST /api/v1/tickets/{id}/reset-verification
+// POST /api/v1/tickets/{id}/reset-verification
+func (h *TicketsHandler) ResetVerification(w http.ResponseWriter, r *http.Request) {
+    idStr := strings.TrimPrefix(r.URL.Path, "/api/v1/tickets/")
+    idStr = strings.TrimSuffix(idStr, "/reset-verification")
+    id, err := strconv.ParseInt(idStr, 10, 64)
+    if err != nil {
+        http.Error(w, "Invalid ticket ID", http.StatusBadRequest)
+        return
+    }
+
+    // Get current user from context
+    userID, ok := r.Context().Value(middleware.ContextUserID).(int)
+    if !ok {
+        http.Error(w, `{"error": "Unauthorized"}`, http.StatusUnauthorized)
+        return
+    }
+
+    roleID, ok := r.Context().Value(middleware.ContextRoleID).(int)
+    if !ok {
+        http.Error(w, `{"error": "Unauthorized"}`, http.StatusUnauthorized)
+        return
+    }
+
+    // Authorization: Only Admin/IT can reset verification
+    if roleID != 1 && roleID != 2 { // 1=Admin, 2=IT Staff
+        http.Error(w, "Forbidden: Only administrators can reset verification", http.StatusForbidden)
+        return
+    }
+
+    // Check if ticket exists (without storing the result)
+    if _, err := h.TicketModel.GetByID(id); err != nil {
+        if err.Error() == "ticket not found" {
+            http.Error(w, "Ticket not found", http.StatusNotFound)
+            return
+        }
+        http.Error(w, "Database error", http.StatusInternalServerError)
+        return
+    }
+
+    // Reset verification to pending
+    err = h.TicketModel.ResetVerification(id, int64(userID))
+    if err != nil {
+        http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
+        return
+    }
+
+    // Get updated ticket
+    updatedTicket, err := h.TicketModel.GetByID(id)
+    if err != nil {
+        http.Error(w, "Database error", http.StatusInternalServerError)
+        return
+    }
+
+    w.Header().Set("Content-Type", "application/json")
+    json.NewEncoder(w).Encode(map[string]interface{}{
+        "message": "Verification reset successfully",
+        "ticket":  updatedTicket,
+    })
 }

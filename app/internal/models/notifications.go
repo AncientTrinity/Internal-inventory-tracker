@@ -28,6 +28,7 @@ func NewNotificationModel(db *sql.DB) *NotificationModel {
 	return &NotificationModel{DB: db}
 }
 
+
 // Create a new notification
 func (m *NotificationModel) Create(notification *Notification) error {
 	query := `
@@ -84,6 +85,7 @@ func (m *NotificationModel) CreateBulk(notifications []Notification) error {
 	
 	return tx.Commit()
 }
+
 
 // Get notifications for a user
 func (m *NotificationModel) GetByUserID(userID int64, unreadOnly bool) ([]Notification, error) {
