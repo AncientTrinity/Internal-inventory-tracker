@@ -634,6 +634,16 @@ func (m *TicketModel) SetupVerification(ticketID int64, status, notes string) er
 
 // ResetVerification resets a ticket's verification status to pending
 func (m *TicketModel) ResetVerification(ticketID, userID int64) error {
+    fmt.Printf("🔍 Model.ResetVerification - ticketID: %d, userID: %d\n", ticketID, userID)
+    
+    // Validate inputs
+    if ticketID == 0 {
+        return fmt.Errorf("invalid ticket ID: %d", ticketID)
+    }
+    if userID == 0 {
+        return fmt.Errorf("invalid user ID: %d", userID)
+    }
+
     query := `
         UPDATE tickets 
         SET verification_status = 'pending', 
@@ -644,6 +654,14 @@ func (m *TicketModel) ResetVerification(ticketID, userID int64) error {
         WHERE id = $2
     `
     
-    _, err := m.DB.Exec(query, "Verification reset by user", ticketID)
-    return err
+    result, err := m.DB.Exec(query, "Verification reset by user", ticketID)
+    if err != nil {
+        fmt.Printf("❌ Database error in ResetVerification: %v\n", err)
+        return err
+    }
+    
+    rowsAffected, _ := result.RowsAffected()
+    fmt.Printf("✅ ResetVerification completed - Rows affected: %d\n", rowsAffected)
+    
+    return nil
 }

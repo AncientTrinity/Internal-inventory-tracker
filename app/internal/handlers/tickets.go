@@ -1044,35 +1044,40 @@ func (h *TicketsHandler) SetupVerification(w http.ResponseWriter, r *http.Reques
 // POST /api/v1/tickets/{id}/reset-verification
 // POST /api/v1/tickets/{id}/reset-verification
 func (h *TicketsHandler) ResetVerification(w http.ResponseWriter, r *http.Request) {
+    fmt.Printf("🔍 ResetVerification called\n")
+    
     idStr := strings.TrimPrefix(r.URL.Path, "/api/v1/tickets/")
     idStr = strings.TrimSuffix(idStr, "/reset-verification")
+    fmt.Printf("🔍 Extracted ID string: '%s'\n", idStr)
+    
     id, err := strconv.ParseInt(idStr, 10, 64)
     if err != nil {
+        fmt.Printf("❌ Error parsing ticket ID: %v\n", err)
         http.Error(w, "Invalid ticket ID", http.StatusBadRequest)
         return
     }
+    fmt.Printf("🔍 Parsed ticket ID: %d\n", id)
 
     // Get current user from context
     userID, ok := r.Context().Value(middleware.ContextUserID).(int)
     if !ok {
+        fmt.Printf("❌ Could not get userID from context\n")
         http.Error(w, `{"error": "Unauthorized"}`, http.StatusUnauthorized)
         return
     }
+    fmt.Printf("🔍 User ID from context: %d\n", userID)
 
     roleID, ok := r.Context().Value(middleware.ContextRoleID).(int)
     if !ok {
+        fmt.Printf("❌ Could not get roleID from context\n")
         http.Error(w, `{"error": "Unauthorized"}`, http.StatusUnauthorized)
         return
     }
+    fmt.Printf("🔍 Role ID from context: %d\n", roleID)
 
-    // Authorization: Only Admin/IT can reset verification
-    if roleID != 1 && roleID != 2 { // 1=Admin, 2=IT Staff
-        http.Error(w, "Forbidden: Only administrators can reset verification", http.StatusForbidden)
-        return
-    }
-
-    // Check if ticket exists (without storing the result)
-    if _, err := h.TicketModel.GetByID(id); err != nil {
+    // Get existing ticket
+    existingTicket, err := h.TicketModel.GetByID(id)
+    if err != nil {
         if err.Error() == "ticket not found" {
             http.Error(w, "Ticket not found", http.StatusNotFound)
             return
@@ -1081,9 +1086,46 @@ func (h *TicketsHandler) ResetVerification(w http.ResponseWriter, r *http.Reques
         return
     }
 
+    fmt.Printf("🔍 Ticket - CreatedBy: %v, VerifiedBy: %v, Status: %s\n", 
+        existingTicket.CreatedBy, existingTicket.VerifiedBy, existingTicket.Status)
+
+    // Prevent resetting verification for closed tickets
+    if existingTicket.Status == "closed" {
+        http.Error(w, "Cannot reset verification for closed tickets", http.StatusBadRequest)
+        return
+    }
+
+    // Enhanced permission check
+    canReset := false
+
+    // Admin and IT Staff can always reset
+    if roleID == 1 || roleID == 2 {
+        canReset = true
+        fmt.Printf("✅ Permission granted: User is Admin/IT Staff\n")
+    } else if existingTicket.CreatedBy != nil && *existingTicket.CreatedBy == int64(userID) {
+        // Allow ticket creator to reset their own verification
+        canReset = true
+        fmt.Printf("✅ Permission granted: User is ticket creator\n")
+    } else if existingTicket.VerifiedBy != nil && *existingTicket.VerifiedBy == int64(userID) {
+        // Allow the user who verified it to reset their own verification
+        canReset = true
+        fmt.Printf("✅ Permission granted: User is the verifier\n")
+    } else {
+        fmt.Printf("❌ Permission denied: User ID %d, CreatedBy: %v, VerifiedBy: %v\n", 
+            userID, existingTicket.CreatedBy, existingTicket.VerifiedBy)
+    }
+
+    if !canReset {
+        http.Error(w, "Forbidden: You cannot reset verification for this ticket", http.StatusForbidden)
+        return
+    }
+
+    fmt.Printf("🔍 Calling ResetVerification with ticketID: %d, userID: %d\n", id, userID)
+    
     // Reset verification to pending
     err = h.TicketModel.ResetVerification(id, int64(userID))
     if err != nil {
+        fmt.Printf("❌ Error in ResetVerification model: %v\n", err)
         http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
         return
     }
@@ -1094,6 +1136,8 @@ func (h *TicketsHandler) ResetVerification(w http.ResponseWriter, r *http.Reques
         http.Error(w, "Database error", http.StatusInternalServerError)
         return
     }
+
+    fmt.Printf("✅ Verification reset successfully for ticket #%s\n", existingTicket.TicketNum)
 
     w.Header().Set("Content-Type", "application/json")
     json.NewEncoder(w).Encode(map[string]interface{}{

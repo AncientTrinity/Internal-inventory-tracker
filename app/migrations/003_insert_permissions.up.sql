@@ -56,6 +56,7 @@ WHERE r.name = 'staff' AND p.name IN (
     'tickets:create', 
     'tickets:read', 
     'tickets:update',
+    'tickets:manage',
     'tickets:verify',
     'assets:read'
 );

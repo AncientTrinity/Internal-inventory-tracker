@@ -139,7 +139,7 @@ r.With(authMiddleware.RequirePermission("tickets:verify")).Post("/request-verifi
 r.With(authMiddleware.RequirePermission("tickets:verify")).Post("/verify", ticketsHandler.VerifyTicket)
 r.With(authMiddleware.RequirePermission("tickets:manage")).Post("/skip-verification", ticketsHandler.SkipVerification)
   r.With(authMiddleware.RequirePermission("tickets:verify")).Post("/setup-verification", ticketsHandler.SetupVerification)
-r.With(authMiddleware.RequirePermission("tickets:manage")).Post("/reset-verification", ticketsHandler.ResetVerification)
+r.With(authMiddleware.RequirePermission("tickets:verify")).Post("/reset-verification", ticketsHandler.ResetVerification)
 
 				
 				// Ticket comments
