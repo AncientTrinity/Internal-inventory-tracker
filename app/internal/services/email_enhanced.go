@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/smtp"
 	"time"
+	"net"
 	"victortillett.net/internal-inventory-tracker/internal/config"
 )
 
@@ -81,3 +82,46 @@ func (es *EnhancedEmailService) SendBulkEmails(emails []struct {
 	}
 	return nil
 }
+
+
+func (es *EmailService) DebugConfig() {
+    fmt.Printf("🔍 Email Config - Host: %s, Port: %s, From: %s\n", 
+        es.config.SMTPHost, es.config.SMTPPort, es.config.SMTPFrom)
+}
+
+// Add this method to check connection
+func (es *EmailService) TestConnection() error {
+    fmt.Printf("🔍 Testing connection to %s:%s\n", es.config.SMTPHost, es.config.SMTPPort)
+    
+    conn, err := net.Dial("tcp", fmt.Sprintf("%s:%s", es.config.SMTPHost, es.config.SMTPPort))
+    if err != nil {
+        return fmt.Errorf("SMTP connection failed: %v", err)
+    }
+    defer conn.Close()
+    
+    fmt.Printf("✅ SMTP connection successful\n")
+    return nil
+}
+
+func (es *EmailService) SendCurrentCredentials(to, username string) error {
+    subject := "Your Account Credentials - Internal Inventory Tracker"
+    
+    body := fmt.Sprintf(`
+Hello %s,
+
+Here are your current login credentials for the Internal Inventory Tracker system:
+
+Username: %s
+
+Please use your existing password to login.
+
+If you have forgotten your password, please contact your IT administrator to reset it.
+
+Best regards,
+IT Support Team
+    `, username, username)
+
+    fmt.Printf("📧 SendCurrentCredentials - Sending current credentials to: %s\n", to)
+    return es.SendEmail(to, subject, body)
+}
+

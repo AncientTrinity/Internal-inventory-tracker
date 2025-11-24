@@ -16,32 +16,46 @@ func NewEmailService(cfg *config.Config) *EmailService {
 }
 
 // SendEmail sends a basic email
+// In services/email.go - UPDATE SendEmail method
 func (es *EmailService) SendEmail(to, subject, body string) error {
-	from := es.config.SMTPFrom
-	
-	// Format the email message
-	msg := []byte(fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\n\r\n%s", from, to, subject, body))
+    from := es.config.SMTPFrom
+    
+    // Format the email message
+    msg := []byte(fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\n\r\n%s", from, to, subject, body))
 
-	// Mailpit doesn't require authentication, use empty auth
-	auth := smtp.PlainAuth("", "", "", es.config.SMTPHost)
-	
-	// Send the email
-	err := smtp.SendMail(
-		fmt.Sprintf("%s:%s", es.config.SMTPHost, es.config.SMTPPort),
-		auth,
-		from,
-		[]string{to},
-		msg,
-	)
-	
-	if err != nil {
-		return fmt.Errorf("failed to send email: %v", err)
-	}
-	
-	return nil
+    // DEBUG: Check actual values
+    fmt.Printf("🔍 SendEmail - Username value: '%s'\n", es.config.SMTPUsername)
+    fmt.Printf("🔍 SendEmail - Password length: %d\n", len(es.config.SMTPPassword))
+
+    // DECLARE the auth variable first
+    var auth smtp.Auth
+    
+    // ✅ FIX: Only use authentication if credentials are provided
+    if es.config.SMTPUsername != "" && es.config.SMTPPassword != "" {
+        fmt.Printf("🔍 SendEmail - Using authentication\n")
+        auth = smtp.PlainAuth("", es.config.SMTPUsername, es.config.SMTPPassword, es.config.SMTPHost)
+    } else {
+        fmt.Printf("🔍 SendEmail - No authentication (Mailpit mode)\n")
+        auth = nil
+    }
+    
+    // Send the email
+    err := smtp.SendMail(
+        fmt.Sprintf("%s:%s", es.config.SMTPHost, es.config.SMTPPort),
+        auth,
+        from,
+        []string{to},
+        msg,
+    )
+    
+    if err != nil {
+        return fmt.Errorf("failed to send email: %v", err)
+    }
+    
+    return nil
 }
 
-// SendHTMLEmail sends an HTML formatted email
+// In services/email.go - FIX THE SendHTMLEmail METHOD
 func (es *EmailService) SendHTMLEmail(to, subject, htmlBody, textBody string) error {
 	from := es.config.SMTPFrom
 	
@@ -51,11 +65,21 @@ func (es *EmailService) SendHTMLEmail(to, subject, htmlBody, textBody string) er
 		from, to, subject, htmlBody,
 	))
 
-	auth := smtp.PlainAuth("", "", "", es.config.SMTPHost)
+	// ✅ FIX: No authentication for Mailpit
+	var auth smtp.Auth
+	
+	// Only use authentication if username and password are provided
+	if es.config.SMTPUsername != "" && es.config.SMTPPassword != "" {
+		fmt.Printf("🔍 SendHTMLEmail - Using authentication\n")
+		auth = smtp.PlainAuth("", es.config.SMTPUsername, es.config.SMTPPassword, es.config.SMTPHost)
+	} else {
+		fmt.Printf("🔍 SendHTMLEmail - No authentication (Mailpit mode)\n")
+		auth = nil
+	}
 	
 	err := smtp.SendMail(
 		fmt.Sprintf("%s:%s", es.config.SMTPHost, es.config.SMTPPort),
-		auth,
+		auth, // This will be nil for Mailpit
 		from,
 		[]string{to},
 		msg,
@@ -67,7 +91,6 @@ func (es *EmailService) SendHTMLEmail(to, subject, htmlBody, textBody string) er
 	
 	return nil
 }
-
 // Email Templates
 
 // SendWelcomeEmail sends welcome email to new users

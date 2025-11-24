@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"errors"
 	"time"
+	"golang.org/x/crypto/bcrypt"
+	"fmt"
 )
 
 type User struct {
@@ -117,4 +119,26 @@ func (m *UsersModel) GetByID(id int64) (*User, error) {
 	}
 
 	return &user, nil
+}
+
+func (m *UsersModel) ResetPassword(userID int64) error {
+    fmt.Printf("🔍 UsersModel.ResetPassword - Resetting password for user %d\n", userID)
+    
+    // Generate a new temporary password or set to a default
+    // For now, let's set a simple temporary password
+    tempPassword := "TempPassword123" // In production, generate a secure random password
+    
+    hashedPassword, err := bcrypt.GenerateFromPassword([]byte(tempPassword), bcrypt.DefaultCost)
+    if err != nil {
+        return fmt.Errorf("failed to hash password: %v", err)
+    }
+
+    query := `UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2`
+    _, err = m.DB.Exec(query, string(hashedPassword), userID)
+    if err != nil {
+        return fmt.Errorf("failed to update password: %v", err)
+    }
+
+    fmt.Printf("✅ UsersModel.ResetPassword - Password updated for user %d\n", userID)
+    return nil
 }

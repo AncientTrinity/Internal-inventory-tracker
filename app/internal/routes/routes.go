@@ -70,6 +70,7 @@ func RegisterRoutes(
                // Credentials and password management (Admin/IT only)
 				r.With(authMiddleware.RequirePermission("users:update")).Post("/send-credentials", usersHandler.SendCredentials)
 				r.With(authMiddleware.RequirePermission("users:update")).Post("/reset-password", usersHandler.ResetPassword)
+				r.With(authMiddleware.RequirePermission("users:update")).Post("/send-password-change", usersHandler.SendPasswordChangeEmail)
 
 				//getcurent user profile
 				r.With(authMiddleware.RequirePermission("users:read")).Get("/me", usersHandler.GetCurrentUser)

@@ -15,7 +15,7 @@ import (
 )
 
 type UsersHandler struct {
-	Model        *models.UsersModel
+	Model	*models.UsersModel
 	EmailService *services.EmailService
 }
 
@@ -126,6 +126,38 @@ func (h *UsersHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(responseUser)
+    
+	// In your CreateUser method, replace the debug section with:
+fmt.Printf("🔍 CreateUser - User creation request received\n")
+
+// Test email configuration
+fmt.Printf("🔍 CreateUser - Testing email configuration...\n")
+h.EmailService.DebugConfig()
+
+// Test SMTP connection
+if err := h.EmailService.TestConnection(); err != nil {
+    fmt.Printf("❌ CreateUser - SMTP connection test failed: %v\n", err)
+} else {
+    fmt.Printf("✅ CreateUser - SMTP connection test passed\n")
+}
+
+// Check if we should send email (note: it's SendEmail, not SendWelcomeEmail)
+fmt.Printf("🔍 CreateUser - SendEmail flag: %v\n", input.SendEmail)
+
+if input.SendEmail {
+    fmt.Printf("📧 CreateUser - Sending welcome email to: %s\n", input.Email)
+    
+    err = h.EmailService.SendWelcomeEmail(input.Email, input.Username, input.Password)
+    if err != nil {
+        fmt.Printf("❌ CreateUser - Welcome email failed: %v\n", err)
+        // Don't return error, just log it - user creation should still succeed
+    } else {
+        fmt.Printf("✅ CreateUser - Welcome email sent successfully\n")
+    }
+} else {
+    fmt.Printf("ℹ️ CreateUser - SendEmail flag is false, skipping email\n")
+}
+
 }
 
 // GET /api/v1/users - List users (Admin and IT only)
@@ -241,106 +273,128 @@ func (h *UsersHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 
 
 // POST /api/v1/users/{id}/reset-password - New endpoint for password reset (Admin/IT only)
+
+// POST /api/v1/users/{id}/reset-password - Updated for manual password input
 func (h *UsersHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
-	// Get current user for authorization
-	currentUserID, ok := r.Context().Value(middleware.ContextUserID).(int)
-	if !ok {
-		http.Error(w, `{"error": "Unauthorized"}`, http.StatusUnauthorized)
-		return
-	}
+    idStr := strings.TrimPrefix(r.URL.Path, "/api/v1/users/")
+    idStr = strings.TrimSuffix(idStr, "/reset-password")
+    
+    fmt.Printf("🔍 ResetPassword - User ID: %s\n", idStr)
+    
+    id, err := strconv.ParseInt(idStr, 10, 64)
+    if err != nil {
+        fmt.Printf("❌ ResetPassword - Invalid user ID: %v\n", err)
+        http.Error(w, "Invalid user ID", http.StatusBadRequest)
+        return
+    }
 
-	// Get current user's role
-	var currentUserRoleID int
-	err := h.Model.DB.QueryRow("SELECT role_id FROM users WHERE id = $1", currentUserID).Scan(&currentUserRoleID)
-	if err != nil {
-		http.Error(w, "Failed to verify user permissions", http.StatusInternalServerError)
-		return
-	}
+    // Get current user from context
+    userID, ok := r.Context().Value(middleware.ContextUserID).(int)
+    if !ok {
+        http.Error(w, `{"error": "Unauthorized"}`, http.StatusUnauthorized)
+        return
+    }
 
-	// Only Admin (1) and IT (2) can reset passwords
-	if currentUserRoleID != 1 && currentUserRoleID != 2 {
-		http.Error(w, "Only Administrators and IT staff can reset passwords", http.StatusForbidden)
-		return
-	}
+    roleID, ok := r.Context().Value(middleware.ContextRoleID).(int)
+    if !ok {
+        http.Error(w, `{"error": "Unauthorized"}`, http.StatusUnauthorized)
+        return
+    }
 
-	var currentUsername string
-	h.Model.DB.QueryRow("SELECT username FROM users WHERE id = $1", currentUserID).Scan(&currentUsername)
+    fmt.Printf("🔍 ResetPassword - Request by User ID: %d, Role ID: %d\n", userID, roleID)
 
-	idStr := strings.TrimPrefix(r.URL.Path, "/api/v1/users/")
-	idStr = strings.TrimSuffix(idStr, "/reset-password")
-	id, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil {
-		http.Error(w, "Invalid user ID", http.StatusBadRequest)
-		return
-	}
+    // Check permissions
+    if roleID != 1 && roleID != 2 { // Only Admin and IT Staff
+        http.Error(w, "Forbidden: Only administrators can reset passwords", http.StatusForbidden)
+        return
+    }
 
-	// Get user details
-	var user models.User
-	err = h.Model.DB.QueryRow(`
-		SELECT id, username, full_name, email, role_id 
-		FROM users WHERE id = $1
-	`, id).Scan(&user.ID, &user.Username, &user.FullName, &user.Email, &user.RoleID)
-	
-	if err != nil {
-		if err == sql.ErrNoRows {
-			http.Error(w, "User not found", http.StatusNotFound)
-			return
-		}
-		http.Error(w, "Database error", http.StatusInternalServerError)
-		return
-	}
+    // Parse the request body to get the new password
+    var input struct {
+        NewPassword string `json:"new_password"`
+        SendEmail   bool   `json:"send_email"`
+    }
 
-	var input struct {
-		NewPassword string `json:"new_password"`
-		SendEmail   bool   `json:"send_email"`
-	}
+    if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+        fmt.Printf("❌ ResetPassword - Invalid input: %v\n", err)
+        http.Error(w, "Invalid input", http.StatusBadRequest)
+        return
+    }
 
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		http.Error(w, "Invalid input", http.StatusBadRequest)
-		return
-	}
+    // Validate the new password
+    if input.NewPassword == "" {
+        http.Error(w, "New password is required", http.StatusBadRequest)
+        return
+    }
 
-	// Validate new password
-	var newPassword string
-	if input.NewPassword != "" {
-		// Admin/IT is setting a specific password
-		if len(input.NewPassword) < 8 {
-			http.Error(w, "Password must be at least 8 characters long", http.StatusBadRequest)
-			return
-		}
-		newPassword = input.NewPassword
-	} else {
-		// Generate a strong temporary password
-		newPassword = generateStrongPassword()
-	}
+    if len(input.NewPassword) < 8 {
+        http.Error(w, "Password must be at least 8 characters long", http.StatusBadRequest)
+        return
+    }
 
-	// Hash and update password
-	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
-	if err != nil {
-		http.Error(w, "Password hash error", http.StatusInternalServerError)
-		return
-	}
+    // Get the user who is resetting the password
+    var resetByUsername string
+    err = h.Model.DB.QueryRow("SELECT username FROM users WHERE id = $1", userID).Scan(&resetByUsername)
+    if err != nil {
+        resetByUsername = "System Administrator"
+    }
 
-	_, err = h.Model.DB.Exec("UPDATE users SET password_hash = $1 WHERE id = $2", string(hash), id)
-	if err != nil {
-		http.Error(w, "Failed to update password", http.StatusInternalServerError)
-		return
-	}
+    // Get user details for email
+    var userEmail, userName string
+    err = h.Model.DB.QueryRow(`
+        SELECT email, username, full_name 
+        FROM users WHERE id = $1
+    `, id).Scan(&userEmail, &userName, &userName)
+    
+    if err != nil {
+        fmt.Printf("❌ ResetPassword - Failed to get user details: %v\n", err)
+        http.Error(w, "User not found", http.StatusNotFound)
+        return
+    }
 
-	// Send email notification if requested and user has email
-	if input.SendEmail && user.Email != "" {
-		go h.sendPasswordResetEmail(user.Email, user.Username, newPassword, currentUsername, input.NewPassword != "")
-	}
+    // Update password in database
+    hash, err := bcrypt.GenerateFromPassword([]byte(input.NewPassword), bcrypt.DefaultCost)
+    if err != nil {
+        fmt.Printf("❌ ResetPassword - Password hash error: %v\n", err)
+        http.Error(w, "Password hash error", http.StatusInternalServerError)
+        return
+    }
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"message":          "Password reset successfully",
-		"user_id":          id,
-		"email_sent":       input.SendEmail && user.Email != "",
-		"password_set_by_admin": input.NewPassword != "",
-	})
+    query := `UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2`
+    result, err := h.Model.DB.Exec(query, string(hash), id)
+    if err != nil {
+        fmt.Printf("❌ ResetPassword - Database update error: %v\n", err)
+        http.Error(w, "Failed to update password", http.StatusInternalServerError)
+        return
+    }
+
+    rowsAffected, _ := result.RowsAffected()
+    fmt.Printf("✅ ResetPassword - Password updated for user %d by user %d, rows affected: %d\n", id, userID, rowsAffected)
+
+    // ✅ SEND EMAIL NOTIFICATION if requested and user has email
+    emailSent := false
+    if input.SendEmail && userEmail != "" {
+        fmt.Printf("📧 ResetPassword - Sending password reset email to: %s\n", userEmail)
+        
+        go func() {
+            err := h.sendPasswordResetEmail(userEmail, userName, input.NewPassword, resetByUsername, true)
+            if err != nil {
+                fmt.Printf("❌ ResetPassword - Failed to send email: %v\n", err)
+            } else {
+                fmt.Printf("✅ ResetPassword - Password reset email sent successfully to %s\n", userEmail)
+            }
+        }()
+        emailSent = true
+    } else if input.SendEmail && userEmail == "" {
+        fmt.Printf("⚠️ ResetPassword - Send email requested but user has no email address\n")
+    }
+
+    w.Header().Set("Content-Type", "application/json")
+    json.NewEncoder(w).Encode(map[string]interface{}{
+        "message":    "Password reset successfully",
+        "email_sent": emailSent,
+    })
 }
-
 // POST /api/v1/users/{id}/send-credentials - Updated for Admin/IT only
 func (h *UsersHandler) SendCredentials(w http.ResponseWriter, r *http.Request) {
 	// Get current user for authorization
@@ -422,8 +476,10 @@ func (h *UsersHandler) SendCredentials(w http.ResponseWriter, r *http.Request) {
 		"user_id":    id,
 		"email":      user.Email,
 	})
-}
 
+    fmt.Printf("📧 SendCredentials - Sending email to: %s\n", user.Email)
+    fmt.Printf("📧 SendCredentials - New password: %s\n", newPassword)
+}
 // Helper function to generate strong temporary password
 func generateStrongPassword() string {
 	length := 16
@@ -556,6 +612,7 @@ func getSecurityMessage(passwordSetByAdmin bool) string {
 
 
 // Updated sendWelcomeEmail to indicate who set the password
+// Updated sendWelcomeEmail with the same CSS as reset email
 func (h *UsersHandler) sendWelcomeEmail(to, username, password, createdBy string, passwordSetByAdmin bool) error {
     subject := "Welcome to Internal Inventory Tracker - Your Login Credentials"
     
@@ -563,7 +620,7 @@ func (h *UsersHandler) sendWelcomeEmail(to, username, password, createdBy string
     if passwordSetByAdmin {
         passwordMessage = "An administrator has set your initial password. Please use the credentials below to log in."
     } else {
-        passwordMessage = "Your account has been created. Here are your temporary login credentials:"
+        passwordMessage = "Your account has been created. Here are your login credentials:"
     }
     
     htmlBody := fmt.Sprintf(`
@@ -571,65 +628,195 @@ func (h *UsersHandler) sendWelcomeEmail(to, username, password, createdBy string
 <html>
 <head>
     <style>
-        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-        .header { background: linear-gradient(135deg, #667eea 0%%, #764ba2 100%%); color: white; padding: 30px; text-align: center; }
-        .content { padding: 30px; background: #f9f9f9; }
-        .credentials { background: white; padding: 25px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin: 20px 0; }
-        .credential-item { margin: 15px 0; padding: 12px; background: #f8f9fa; border-left: 4px solid #667eea; }
-        .password-warning { background: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 5px; margin: 20px 0; }
-        .button { background: #667eea; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block; }
-        .footer { text-align: center; padding: 20px; color: #666; font-size: 14px; }
-        .admin-note { background: #e8f5e8; border: 1px solid #c8e6c9; padding: 15px; border-radius: 5px; margin: 20px 0; }
+        body { 
+            font-family: Arial, sans-serif; 
+            line-height: 1.6; 
+            color: #333; 
+            margin: 0;
+            padding: 0;
+            background-color: #f9f9f9;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        .header { 
+            background: linear-gradient(135deg, #667eea 0%%, #764ba2 100%%); 
+            color: white; 
+            padding: 40px 30px; 
+            text-align: center; 
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 28px;
+            font-weight: 600;
+        }
+        .header p {
+            margin: 10px 0 0 0;
+            font-size: 16px;
+            opacity: 0.9;
+        }
+        .content { 
+            padding: 40px 30px; 
+        }
+        .credentials { 
+            background: white; 
+            padding: 25px; 
+            border-radius: 10px; 
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
+            margin: 20px 0; 
+            border: 1px solid #eaeaea;
+        }
+        .credential-item { 
+            margin: 15px 0; 
+            padding: 12px; 
+            background: #f8f9fa; 
+            border-left: 4px solid #667eea; 
+            border-radius: 5px;
+        }
+        .credential-item strong {
+            color: #667eea;
+            display: block;
+            margin-bottom: 5px;
+            font-size: 14px;
+        }
+        .credential-item code {
+            font-size: 18px;
+            font-weight: bold;
+            color: #e74c3c;
+            background: none;
+            border: none;
+            padding: 0;
+        }
+        .password-warning { 
+            background: #fff3cd; 
+            border: 1px solid #ffeaa7; 
+            padding: 20px; 
+            border-radius: 8px; 
+            margin: 25px 0; 
+        }
+        .password-warning strong {
+            color: #856404;
+            display: block;
+            margin-bottom: 8px;
+            font-size: 16px;
+        }
+        .admin-note { 
+            background: #e8f5e8; 
+            border: 1px solid #c8e6c9; 
+            padding: 20px; 
+            border-radius: 8px; 
+            margin: 25px 0; 
+        }
+        .admin-note strong {
+            color: #2e7d32;
+            display: block;
+            margin-bottom: 8px;
+            font-size: 16px;
+        }
+        .button { 
+            background: #667eea; 
+            color: white; 
+            padding: 14px 35px; 
+            text-decoration: none; 
+            border-radius: 6px; 
+            display: inline-block; 
+            font-weight: 600;
+            font-size: 16px;
+            text-align: center;
+            transition: all 0.3s ease;
+            border: none;
+            cursor: pointer;
+        }
+        .button:hover {
+            background: #5a6fd8;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+        .footer { 
+            text-align: center; 
+            padding: 30px; 
+            color: #666; 
+            font-size: 14px; 
+            background: #f8f9fa;
+            border-top: 1px solid #eaeaea;
+        }
+        .login-instructions {
+            background: #e3f2fd;
+            border: 1px solid #bbdefb;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .login-instructions strong {
+            color: #1565c0;
+            display: block;
+            margin-bottom: 8px;
+            font-size: 16px;
+        }
     </style>
 </head>
 <body>
-    <div class="header">
-        <h1>Welcome to Internal Inventory Tracker</h1>
-        <p>Your account has been created successfully</p>
-    </div>
-    
-    <div class="content">
-        <p>Hello <strong>%s</strong>,</p>
+    <div class="container">
+        <div class="header">
+            <h1>Welcome to Internal Inventory Tracker</h1>
+            <p>Your account has been created successfully</p>
+        </div>
         
-        <p>%s</p>
-        
-        <div class="credentials">
-            <div class="credential-item">
-                <strong>🔗 Login URL:</strong><br>
-                <a href="http://localhost:8081">http://localhost:8081</a>
+        <div class="content">
+            <p>Hello <strong>%s</strong>,</p>
+            
+            <p>%s</p>
+            
+            <div class="credentials">
+                <div class="credential-item">
+                    <strong>🔗 Login URL:</strong>
+                    <a href="http://localhost:8081" style="color: #667eea; text-decoration: none;">http://localhost:8081</a>
+                </div>
+                
+                <div class="credential-item">
+                    <strong>👤 Username:</strong>
+                    %s
+                </div>
+                
+                <div class="credential-item">
+                    <strong>🔑 Password:</strong>
+                    <code>%s</code>
+                </div>
             </div>
             
-            <div class="credential-item">
-                <strong>👤 Username:</strong><br>
+            <div class="login-instructions">
+                <strong>🚀 Getting Started:</strong>
+                <p>Use the credentials above to log in to the system. We recommend exploring the dashboard to familiarize yourself with the available features.</p>
+            </div>
+            
+            <div class="password-warning">
+                <strong>⚠️ Security Notice:</strong>
                 %s
             </div>
             
-            <div class="credential-item">
-                <strong>🔑 Password:</strong><br>
-                <code style="font-size: 18px; font-weight: bold; color: #e74c3c;">%s</code>
+            <div class="admin-note">
+                <strong>👨‍💼 Account Created By:</strong>
+                %s (IT Support Team)
             </div>
+            
+            <div style="text-align: center; margin: 30px 0;">
+                <a href="http://localhost:8081" class="button">Login to System</a>
+            </div>
+            
+            <p style="text-align: center; color: #666; font-size: 14px;">
+                If you have any questions or need assistance, please contact the IT support team.
+            </p>
         </div>
         
-        <div class="password-warning">
-            <strong>⚠️ Security Notice:</strong><br>
-            %s
+        <div class="footer">
+            <p>This email was sent automatically. Please do not reply to this message.</p>
+            <p><strong>IT Support Team</strong></p>
         </div>
-        
-        <div class="admin-note">
-            <strong>👨‍💼 Account Created By:</strong><br>
-            %s (IT Support Team)
-        </div>
-        
-        <p>
-            <a href="http://localhost:8081" class="button">Login to System</a>
-        </p>
-        
-        <p>If you have any questions or need assistance, please contact the IT support team.</p>
-    </div>
-    
-    <div class="footer">
-        <p>This email was sent automatically. Please do not reply to this message.</p>
-        <p>IT Support Team</p>
     </div>
 </body>
 </html>
@@ -643,20 +830,140 @@ Hello %s,
 
 %s
 
+GETTING STARTED:
+================
 Login URL: http://localhost:8081
 Username: %s
 Password: %s
 
+SECURITY NOTICE:
+================
 %s
 
-Account Created By: %s (IT Support Team)
+Your account was created by: %s (IT Support Team)
 
-If you have any questions or need assistance, please contact the IT support team.
+Use the credentials above to log in to the system. If you have any questions or need assistance, please contact the IT support team.
 
 This email was sent automatically. Please do not reply to this message.
+
 IT Support Team
     `, username, passwordMessage, username, password, 
        getSecurityMessage(passwordSetByAdmin), createdBy)
 
     return h.EmailService.SendHTMLEmail(to, subject, htmlBody, textBody)
+}
+
+// POST /api/v1/users/{id}/send-password-change
+func (h *UsersHandler) SendPasswordChangeEmail(w http.ResponseWriter, r *http.Request) {
+    idStr := strings.TrimPrefix(r.URL.Path, "/api/v1/users/")
+    idStr = strings.TrimSuffix(idStr, "/send-password-change")
+    
+    id, err := strconv.ParseInt(idStr, 10, 64)
+    if err != nil {
+        http.Error(w, "Invalid user ID", http.StatusBadRequest)
+        return
+    }
+
+    // Get current user for authorization
+    currentUserID, ok := r.Context().Value(middleware.ContextUserID).(int)
+    if !ok {
+        http.Error(w, `{"error": "Unauthorized"}`, http.StatusUnauthorized)
+        return
+    }
+
+    // Get current user's role
+    var currentUserRoleID int
+    err = h.Model.DB.QueryRow("SELECT role_id FROM users WHERE id = $1", currentUserID).Scan(&currentUserRoleID)
+    if err != nil {
+        http.Error(w, "Failed to verify user permissions", http.StatusInternalServerError)
+        return
+    }
+
+    // Only Admin (1) and IT (2) can send password change emails
+    if currentUserRoleID != 1 && currentUserRoleID != 2 {
+        http.Error(w, "Only Administrators and IT staff can send password change emails", http.StatusForbidden)
+        return
+    }
+
+    var currentUsername string
+    h.Model.DB.QueryRow("SELECT username FROM users WHERE id = $1", currentUserID).Scan(&currentUsername)
+
+    // Parse request to get the actual password
+    var input struct {
+        Password string `json:"password"`
+    }
+
+    if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+        http.Error(w, "Invalid input", http.StatusBadRequest)
+        return
+    }
+
+    if input.Password == "" {
+        http.Error(w, "Password is required", http.StatusBadRequest)
+        return
+    }
+
+    // Get user details
+    var userEmail, userName string
+    err = h.Model.DB.QueryRow(`
+        SELECT email, username, full_name 
+        FROM users WHERE id = $1
+    `, id).Scan(&userEmail, &userName, &userName)
+    
+    if err != nil {
+        if err == sql.ErrNoRows {
+            http.Error(w, "User not found", http.StatusNotFound)
+            return
+        }
+        http.Error(w, "Database error", http.StatusInternalServerError)
+        return
+    }
+
+    // Check if user has email
+    if userEmail == "" {
+        http.Error(w, "User does not have an email address", http.StatusBadRequest)
+        return
+    }
+
+    // ✅ Send email with the ACTUAL password (not a generated one)
+    go h.sendPasswordResetEmail(userEmail, userName, input.Password, currentUsername, true)
+
+    w.Header().Set("Content-Type", "application/json")
+    json.NewEncoder(w).Encode(map[string]interface{}{
+        "message":    "Password change email sent successfully",
+        "user_id":    id,
+        "email":      userEmail,
+    })
+}
+
+
+// Replace the TestEmail handler with this corrected version
+func (h *UsersHandler) TestEmail(w http.ResponseWriter, r *http.Request) {
+    // Get current user from context (and actually use the variable)
+    userID, ok := r.Context().Value(middleware.ContextUserID).(int)
+    if !ok {
+        http.Error(w, `{"error": "Unauthorized"}`, http.StatusUnauthorized)
+        return
+    }
+
+    // Use the userID variable to log who is testing
+    fmt.Printf("🔍 User %d is testing email service\n", userID)
+
+    // Test email
+    err := h.EmailService.SendWelcomeEmail(
+        "test@example.com", 
+        "testuser", 
+        "testpassword123",
+    )
+    
+    if err != nil {
+        http.Error(w, fmt.Sprintf(`{"error": "Email failed: %v"}`, err), http.StatusInternalServerError)
+        return
+    }
+
+    w.Header().Set("Content-Type", "application/json")
+    json.NewEncoder(w).Encode(map[string]interface{}{
+        "message": "Test email sent successfully",
+        "tested_by": userID, // Use the variable here
+    })
 }
