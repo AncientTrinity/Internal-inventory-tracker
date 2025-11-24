@@ -20,6 +20,7 @@ func RegisterRoutes(
 	ticketsHandler *handlers.TicketsHandler, //tickets handler
 	ticketCommentsHandler *handlers.TicketCommentsHandler, // ticket comments handler
 	notificationsHandler *handlers.NotificationsHandler, // notifications handler
+	reportsHandler *handlers.ReportsHandler, // reports handler
 	authHandler *handlers.AuthHandler,// new auth handler
 	jwtSecret string,
 ) http.Handler {
@@ -31,8 +32,6 @@ func RegisterRoutes(
 
 	// Initialize authorization middleware
 	authMiddleware := middleware.NewAuthorizationMiddleware(usersHandler.Model.DB)
-
-	//initialize services here if needed
 
 	// -----------------------
 	// Public routes
@@ -178,6 +177,13 @@ r.With(authMiddleware.RequirePermission("tickets:verify")).Post("/reset-verifica
 			r.Route("/{id}", func(r chi.Router) {
 				r.With(authMiddleware.RequirePermission("notifications:update")).Put("/read", notificationsHandler.MarkAsRead)
 			})
+		})
+
+		// Reports routes
+		protected.Route("/api/v1/reports", func(r chi.Router) {
+			r.With(authMiddleware.RequirePermission("reports:read")).Post("/analytics", reportsHandler.GetAnalytics)
+			r.With(authMiddleware.RequirePermission("reports:export")).Post("/export/csv", reportsHandler.ExportCSV)
+			r.With(authMiddleware.RequirePermission("reports:read")).Get("/types", reportsHandler.GetReportTypes)
 		})
 	}) // This closes the protected group
 

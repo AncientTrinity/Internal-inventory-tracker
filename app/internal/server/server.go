@@ -31,11 +31,12 @@ func NewServer(db *sql.DB, cfg *config.Config) *http.Server {
 	ticketCommentsHandler := handlers.NewTicketCommentsHandler(db,emailService) // ticket comments handler with email service
 	assetSearchHandler := handlers.NewAssetSearchHandler(db)// New asset search handler
 	notificationsHandler := handlers.NewNotificationsHandler(db) // New notifications handler
+	reportsHandler := handlers.NewReportsHandler(db) // New reports handler
 	authHandler := handlers.NewAuthHandler(db, cfg.JWTSecret)// New auth handler
 
 	// Register routes using handlers and JWT secret
 	router := routes.RegisterRoutes(usersHandler, rolesHandler, assetsHandler, assetServiceHandler, assetAssignmentHandler, assetSearchHandler,
-		                           ticketsHandler, ticketCommentsHandler,notificationsHandler, authHandler, cfg.JWTSecret) // Register routes
+		                           ticketsHandler, ticketCommentsHandler,notificationsHandler, reportsHandler, authHandler, cfg.JWTSecret) // Register routes
 
 	return &http.Server{
 		Addr:         ":" + port,
