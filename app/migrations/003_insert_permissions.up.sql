@@ -30,6 +30,10 @@ INSERT INTO permissions (name, resource, action, description) VALUES
     ('tickets:verify', 'tickets', 'verify', 'Verify ticket completion'),
     ('tickets:manage', 'tickets', 'manage', 'Full ticket management'),
     
+    -- Notification permissions
+    ('notifications:read', 'notifications', 'read', 'View notifications'),
+    ('notifications:update', 'notifications', 'update', 'Mark notifications as read'),
+    
     -- System permissions
     ('system:admin', 'system', 'admin', 'Full system administration'),
     ('audit:read', 'audit', 'read', 'View audit logs');
@@ -40,16 +44,17 @@ INSERT INTO permissions (name, resource, action, description) VALUES
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'admin';
 
--- IT Staff: user read, full asset and ticket management
+-- IT Staff: user read, full asset and ticket management, all notifications
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id FROM roles r, permissions p 
 WHERE r.name = 'it' AND p.name IN (
     'users:read',
     'assets:create', 'assets:read', 'assets:update', 'assets:manage',
-    'tickets:create', 'tickets:read', 'tickets:update', 'tickets:assign', 'tickets:manage'
+    'tickets:create', 'tickets:read', 'tickets:update', 'tickets:assign', 'tickets:manage',
+    'notifications:read', 'notifications:update'
 );
 
--- Staff/Team Leads: ticket creation, reading, updating, and verification
+-- Staff/Team Leads: ticket creation, reading, updating, verification, and notification read
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id FROM roles r, permissions p 
 WHERE r.name = 'staff' AND p.name IN (
@@ -58,10 +63,12 @@ WHERE r.name = 'staff' AND p.name IN (
     'tickets:update',
     'tickets:manage',
     'tickets:verify',
-    'assets:read'
+    'assets:read',
+    'notifications:read',
+    'notifications:update'
 );
 
--- Agents: view own tickets and assets, create tickets, verify their own tickets
+-- Agents: view own tickets and assets, create tickets, verify their own tickets, read notifications
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id FROM roles r, permissions p 
 WHERE r.name = 'agent' AND p.name IN (
@@ -69,41 +76,11 @@ WHERE r.name = 'agent' AND p.name IN (
     'tickets:read', 
     'tickets:update',
     'tickets:verify',
-    'assets:read'
+    'assets:read',
+    'notifications:read'
 );
 
--- Viewers: read-only access
+-- Viewers: read-only access including notifications
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id FROM roles r, permissions p 
-WHERE r.name = 'viewer' AND p.name IN ('assets:read', 'tickets:read');
-
--- Add notification permissions
-INSERT INTO permissions (name, resource, action, description) VALUES
-('notifications:read', 'notifications', 'read', 'View notifications'),
-('notifications:update', 'notifications', 'update', 'Mark notifications as read');
-
--- Assign notification permissions to roles
--- Admin: all permissions
-INSERT INTO role_permissions (role_id, permission_id)
-SELECT r.id, p.id FROM roles r, permissions p 
-WHERE r.name = 'admin' AND p.name IN ('notifications:read', 'notifications:update');
-
--- IT Staff: all notification permissions
-INSERT INTO role_permissions (role_id, permission_id)
-SELECT r.id, p.id FROM roles r, permissions p 
-WHERE r.name = 'it' AND p.name IN ('notifications:read', 'notifications:update');
-
--- Staff: read notifications only
-INSERT INTO role_permissions (role_id, permission_id)
-SELECT r.id, p.id FROM roles r, permissions p 
-WHERE r.name = 'staff' AND p.name = 'notifications:read';
-
--- Agents: read notifications only  
-INSERT INTO role_permissions (role_id, permission_id)
-SELECT r.id, p.id FROM roles r, permissions p 
-WHERE r.name = 'agent' AND p.name = 'notifications:read';
-
--- Viewers: read notifications only
-INSERT INTO role_permissions (role_id, permission_id)
-SELECT r.id, p.id FROM roles r, permissions p 
-WHERE r.name = 'viewer' AND p.name = 'notifications:read';
+WHERE r.name = 'viewer' AND p.name IN ('assets:read', 'tickets:read', 'notifications:read');

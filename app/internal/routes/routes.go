@@ -32,6 +32,8 @@ func RegisterRoutes(
 	// Initialize authorization middleware
 	authMiddleware := middleware.NewAuthorizationMiddleware(usersHandler.Model.DB)
 
+	//initialize services here if needed
+
 	// -----------------------
 	// Public routes
 	// -----------------------
