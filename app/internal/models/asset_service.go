@@ -1,3 +1,4 @@
+//file: app/internal/models/asset_service.go
 package models
 
 import (
