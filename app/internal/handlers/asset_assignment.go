@@ -1,3 +1,4 @@
+//file: app/internal/handlers/asset_assignment.go
 package handlers
 
 import (

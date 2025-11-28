@@ -1,3 +1,4 @@
+// app/internal/models/tickets.go
 package models
 
 import (
@@ -20,6 +21,13 @@ type Ticket struct {
 	AssignedTo  *int64     `json:"assigned_to"`  // IT staff assigned
 	AssetID     *int64     `json:"asset_id"`     // Related asset (optional)
 	IsInternal  bool       `json:"is_internal"`  // Internal ticket
+
+	// Verification fields
+	VerificationStatus string     `json:"verification_status"` // not_required, pending, verified, rejected
+	VerificationNotes  string     `json:"verification_notes"`
+	VerifiedBy         *int64     `json:"verified_by"`
+	VerifiedAt         *time.Time `json:"verified_at"`
+
 	CreatedAt   time.Time  `json:"created_at"`
 	UpdatedAt   time.Time  `json:"updated_at"`
 	ClosedAt    *time.Time `json:"closed_at"`
@@ -28,6 +36,7 @@ type Ticket struct {
 	CreatedByUser  *User `json:"created_by_user,omitempty"`
 	AssignedToUser *User `json:"assigned_to_user,omitempty"`
 	Asset          *Asset `json:"asset,omitempty"`
+	VerifiedByUser *User `json:"verified_by_user,omitempty"`
 }
 
 type TicketModel struct {
@@ -120,27 +129,33 @@ func (m *TicketModel) Insert(ticket *Ticket) error {
 }
 
 // Get ticket by ID with user and asset details
+// Now with verification details
 func (m *TicketModel) GetByID(id int64) (*Ticket, error) {
 	query := `
 		SELECT 
 			t.id, t.ticket_num, t.title, t.description, t.type, t.priority,
 			t.status, t.completion, t.created_by, t.assigned_to, t.asset_id,
-			t.is_internal, t.created_at, t.updated_at, t.closed_at,
+			t.is_internal, t.verification_status, t.verification_notes,
+			t.verified_by, t.verified_at, t.created_at, t.updated_at, t.closed_at,
 			creator.id, creator.username, creator.full_name, creator.email,
 			assignee.id, assignee.username, assignee.full_name, assignee.email,
+			verifier.id, verifier.username, verifier.full_name, verifier.email,
 			a.id, a.internal_id, a.asset_type, a.manufacturer, a.model
 		FROM tickets t
 		LEFT JOIN users creator ON t.created_by = creator.id
 		LEFT JOIN users assignee ON t.assigned_to = assignee.id
+		LEFT JOIN users verifier ON t.verified_by = verifier.id
 		LEFT JOIN assets a ON t.asset_id = a.id
 		WHERE t.id = $1
 	`
 	
 	var ticket Ticket
-	var creatorID, assigneeID, assetID sql.NullInt64
+	var creatorID, assigneeID, verifiedByID, assetID sql.NullInt64
 	var creatorUsername, creatorFullName, creatorEmail sql.NullString
 	var assigneeUsername, assigneeFullName, assigneeEmail sql.NullString
+	var verifierUsername, verifierFullName, verifierEmail sql.NullString
 	var assetInternalID, assetType, assetManufacturer, assetModel sql.NullString
+	var verifiedAt sql.NullTime
 	
 	err := m.DB.QueryRow(query, id).Scan(
 		&ticket.ID,
@@ -155,11 +170,16 @@ func (m *TicketModel) GetByID(id int64) (*Ticket, error) {
 		&assigneeID,
 		&assetID,
 		&ticket.IsInternal,
+		&ticket.VerificationStatus,
+		&ticket.VerificationNotes,
+		&verifiedByID,
+		&verifiedAt,
 		&ticket.CreatedAt,
 		&ticket.UpdatedAt,
 		&ticket.ClosedAt,
 		&creatorID, &creatorUsername, &creatorFullName, &creatorEmail,
 		&assigneeID, &assigneeUsername, &assigneeFullName, &assigneeEmail,
+		&verifiedByID, &verifierUsername, &verifierFullName, &verifierEmail,
 		&assetID, &assetInternalID, &assetType, &assetManufacturer, &assetModel,
 	)
 	
@@ -188,6 +208,20 @@ func (m *TicketModel) GetByID(id int64) (*Ticket, error) {
 			Email:    assigneeEmail.String,
 		}
 		ticket.AssignedTo = &assigneeID.Int64
+	}
+	
+	if verifiedByID.Valid {
+		ticket.VerifiedByUser = &User{
+			ID:       verifiedByID.Int64,
+			Username: verifierUsername.String,
+			FullName: verifierFullName.String,
+			Email:    verifierEmail.String,
+		}
+		ticket.VerifiedBy = &verifiedByID.Int64
+	}
+	
+	if verifiedAt.Valid {
+		ticket.VerifiedAt = &verifiedAt.Time
 	}
 	
 	if assetID.Valid {
@@ -428,4 +462,206 @@ type TicketFilters struct {
 	AgentView  *int64 // For agent-specific view
 	Limit      int
 	Offset     int
+}
+
+// Delete ticket by ID
+func (m *TicketModel) Delete(id int64) error {
+	// First, delete related comments to maintain referential integrity
+	_, err := m.DB.Exec("DELETE FROM ticket_comments WHERE ticket_id = $1", id)
+	if err != nil {
+		return fmt.Errorf("failed to delete ticket comments: %v", err)
+	}
+
+	// Then delete the ticket
+	result, err := m.DB.Exec("DELETE FROM tickets WHERE id = $1", id)
+	if err != nil {
+		return err
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if rows == 0 {
+		return errors.New("ticket not found")
+	}
+
+	return nil
+}
+
+// Request verification for a ticket
+// RequestVerification - Allow any user to request verification for tickets they created
+func (m *TicketModel) RequestVerification(ticketID int64, notes string) error {
+	query := `
+		UPDATE tickets 
+		SET 
+			verification_status = 'pending',
+			verification_notes = $1,
+			status = 'resolved',
+			completion = 90,
+			updated_at = NOW()
+		WHERE id = $2
+	`
+	
+	result, err := m.DB.Exec(query, notes, ticketID)
+	if err != nil {
+		return err
+	}
+	
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return errors.New("ticket not found")
+	}
+	return nil
+}
+
+// VerifyTicket - Allow verification by creator OR Admin/IT staff
+func (m *TicketModel) VerifyTicket(ticketID, userID int64, approved bool, notes string, userRoleID int) error {
+	var newStatus string
+	if approved {
+		newStatus = "verified"
+	} else {
+		newStatus = "rejected"
+	}
+	
+	// Build query based on who is verifying
+	query := `
+		UPDATE tickets 
+		SET 
+			verification_status = $1,
+			verification_notes = COALESCE($2, verification_notes),
+			verified_by = $3,
+			verified_at = NOW(),
+			status = CASE 
+				WHEN $4 = true THEN 'closed' 
+				ELSE 'in_progress' 
+			END,
+			completion = CASE 
+				WHEN $4 = true THEN 100 
+				ELSE 50 
+			END,
+			closed_at = CASE 
+				WHEN $4 = true THEN NOW() 
+				ELSE closed_at 
+			END,
+			updated_at = NOW()
+		WHERE id = $5
+	`
+	
+	result, err := m.DB.Exec(query, newStatus, notes, userID, approved, ticketID)
+	if err != nil {
+		return err
+	}
+	
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return errors.New("ticket not found")
+	}
+	return nil
+}
+
+// CanVerifyTicket - Check if user can verify this ticket
+func (m *TicketModel) CanVerifyTicket(ticketID, userID int64, userRoleID int) (bool, error) {
+	var createdBy sql.NullInt64
+	err := m.DB.QueryRow(
+		"SELECT created_by FROM tickets WHERE id = $1", 
+		ticketID,
+	).Scan(&createdBy)
+	
+	if err != nil {
+		return false, err
+	}
+	
+	// Admin/IT staff can verify any ticket
+	if userRoleID == 1 || userRoleID == 2 { // Admin or IT Staff
+		return true, nil
+	}
+	
+	// Regular users can only verify tickets they created
+	if createdBy.Valid && createdBy.Int64 == userID {
+		return true, nil
+	}
+	
+	return false, nil
+}
+// Skip verification for a ticket
+func (m *TicketModel) SkipVerification(ticketID int64) error {
+	query := `
+		UPDATE tickets 
+		SET 
+			verification_status = 'not_required',
+			status = 'closed',
+			completion = 100,
+			closed_at = NOW(),
+			updated_at = NOW()
+		WHERE id = $1
+	`
+	
+	result, err := m.DB.Exec(query, ticketID)
+	if err != nil {
+		return err
+	}
+	
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return errors.New("ticket not found")
+	}
+	return nil
+}
+
+func (m *TicketModel) SetupVerification(ticketID int64, status, notes string) error {
+	query := `
+		UPDATE tickets 
+		SET 
+			verification_status = $1,
+			verification_notes = $2,
+			updated_at = NOW()
+		WHERE id = $3
+	`
+	
+	result, err := m.DB.Exec(query, status, notes, ticketID)
+	if err != nil {
+		return err
+	}
+	
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return errors.New("ticket not found")
+	}
+	return nil
+}
+
+// ResetVerification resets a ticket's verification status to pending
+func (m *TicketModel) ResetVerification(ticketID, userID int64) error {
+    fmt.Printf("🔍 Model.ResetVerification - ticketID: %d, userID: %d\n", ticketID, userID)
+    
+    // Validate inputs
+    if ticketID == 0 {
+        return fmt.Errorf("invalid ticket ID: %d", ticketID)
+    }
+    if userID == 0 {
+        return fmt.Errorf("invalid user ID: %d", userID)
+    }
+
+    query := `
+        UPDATE tickets 
+        SET verification_status = 'pending', 
+            verification_notes = $1,
+            verified_by = NULL,
+            verified_at = NULL,
+            updated_at = NOW()
+        WHERE id = $2
+    `
+    
+    result, err := m.DB.Exec(query, "Verification reset by user", ticketID)
+    if err != nil {
+        fmt.Printf("❌ Database error in ResetVerification: %v\n", err)
+        return err
+    }
+    
+    rowsAffected, _ := result.RowsAffected()
+    fmt.Printf("✅ ResetVerification completed - Rows affected: %d\n", rowsAffected)
+    
+    return nil
 }

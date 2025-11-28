@@ -87,7 +87,11 @@ CREATE TABLE tickets (
   assigned_to BIGINT REFERENCES users(id) ON DELETE SET NULL,
   asset_id BIGINT REFERENCES assets(id) ON DELETE SET NULL,
   is_internal BOOLEAN DEFAULT true,
-   completion INTEGER NOT NULL DEFAULT 0, -- 0-100 percentage
+  verification_status TEXT DEFAULT 'not_required', -- 'not_required', 'pending', 'verified', 'rejected'
+  verification_notes TEXT,
+  verified_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  verified_at TIMESTAMP,
+  completion INTEGER NOT NULL DEFAULT 0, -- 0-100 percentage
   created_at TIMESTAMP NOT NULL DEFAULT now(),
   updated_at TIMESTAMP NOT NULL DEFAULT now(),
   closed_at TIMESTAMP
@@ -128,4 +132,5 @@ CREATE INDEX idx_assets_status ON assets (status);
 CREATE INDEX idx_users_email ON users (email);
 CREATE INDEX idx_audit_log_user_id ON audit_log (user_id);
 CREATE INDEX idx_audit_log_created_at ON audit_log (created_at);
-CREATE INDEX idx_role_permissions_role_id ON role_permissions (role_id);
+CREATE INDEX idx_role_permissions_role_id ON role_permissions (role_id)
+CREATE INDEX idx_tickets_verification_status ON tickets (verification_status);

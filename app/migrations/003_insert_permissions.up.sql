@@ -27,6 +27,16 @@ INSERT INTO permissions (name, resource, action, description) VALUES
     ('tickets:update', 'tickets', 'update', 'Update tickets'),
     ('tickets:delete', 'tickets', 'delete', 'Delete tickets'),
     ('tickets:assign', 'tickets', 'assign', 'Assign tickets to users'),
+    ('tickets:verify', 'tickets', 'verify', 'Verify ticket completion'),
+    ('tickets:manage', 'tickets', 'manage', 'Full ticket management'),
+    
+    -- Notification permissions
+    ('notifications:read', 'notifications', 'read', 'View notifications'),
+    ('notifications:update', 'notifications', 'update', 'Mark notifications as read'),
+
+    --Report permissions
+   ('reports:read', 'reports', 'read', 'View analytics and reports'),
+    ('reports:export', 'reports', 'export', 'Export reports to CSV'),
     
     -- System permissions
     ('system:admin', 'system', 'admin', 'Full system administration'),
@@ -38,29 +48,46 @@ INSERT INTO permissions (name, resource, action, description) VALUES
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'admin';
 
--- IT Staff: user read, full asset and ticket management
+-- IT Staff: user read, full asset and ticket management, all notifications
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id FROM roles r, permissions p 
 WHERE r.name = 'it' AND p.name IN (
     'users:read',
     'assets:create', 'assets:read', 'assets:update', 'assets:manage',
-    'tickets:create', 'tickets:read', 'tickets:update', 'tickets:assign'
+    'tickets:create', 'tickets:read', 'tickets:update', 'tickets:assign', 'tickets:manage',
+    'notifications:read', 'notifications:update', 'reports:read', 'reports:export'
 );
 
--- Staff/Team Leads: ticket and asset viewing
+-- Staff/Team Leads: ticket creation, reading, updating, verification, and notification read
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id FROM roles r, permissions p 
 WHERE r.name = 'staff' AND p.name IN (
-    'tickets:read', 'tickets:update',
-    'assets:read'
+    'tickets:create', 
+    'tickets:read', 
+    'tickets:update',
+    'tickets:manage',
+    'tickets:verify',
+    'assets:read',
+    'notifications:read',
+    'notifications:update'
+    'reports:read', 
+    'reports:export'
 );
 
--- Agents: view own tickets only
+-- Agents: view own tickets and assets, create tickets, verify their own tickets, read notifications
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id FROM roles r, permissions p 
-WHERE r.name = 'agent' AND p.name = 'tickets:read';
+WHERE r.name = 'agent' AND p.name IN (
+    'tickets:create',
+    'tickets:read', 
+    'tickets:update',
+    'tickets:verify',
+    'assets:read',
+    'notifications:read',
+    'reports:read'
+);
 
--- Viewers: read-only access
+-- Viewers: read-only access including notifications
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id FROM roles r, permissions p 
-WHERE r.name = 'viewer' AND p.name IN ('assets:read', 'tickets:read');
+WHERE r.name = 'viewer' AND p.name IN ('assets:read', 'tickets:read', 'notifications:read', 'reports:read');

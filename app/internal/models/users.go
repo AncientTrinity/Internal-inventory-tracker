@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"errors"
 	"time"
+	"golang.org/x/crypto/bcrypt"
+	"fmt"
 )
 
 type User struct {
@@ -58,4 +60,85 @@ func (m *UsersModel) Delete(id int64) error {
 		return errors.New("user not found")
 	}
 	return nil
+}
+
+// ADD THESE MISSING METHODS:
+
+// GetAll returns all users
+func (m *UsersModel) GetAll() ([]User, error) {
+	rows, err := m.DB.Query(`
+		SELECT id, username, full_name, email, role_id, created_at 
+		FROM users 
+		ORDER BY id
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var users []User
+	for rows.Next() {
+		var user User
+		err := rows.Scan(
+			&user.ID,
+			&user.Username,
+			&user.FullName,
+			&user.Email,
+			&user.RoleID,
+			&user.CreatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		users = append(users, user)
+	}
+
+	return users, nil
+}
+
+// GetByID returns a user by ID
+func (m *UsersModel) GetByID(id int64) (*User, error) {
+	var user User
+	err := m.DB.QueryRow(`
+		SELECT id, username, full_name, email, role_id, created_at 
+		FROM users 
+		WHERE id = $1
+	`, id).Scan(
+		&user.ID,
+		&user.Username,
+		&user.FullName,
+		&user.Email,
+		&user.RoleID,
+		&user.CreatedAt,
+	)
+
+	if err == sql.ErrNoRows {
+		return nil, errors.New("user not found")
+	} else if err != nil {
+		return nil, err
+	}
+
+	return &user, nil
+}
+
+func (m *UsersModel) ResetPassword(userID int64) error {
+    fmt.Printf("🔍 UsersModel.ResetPassword - Resetting password for user %d\n", userID)
+    
+    // Generate a new temporary password or set to a default
+    // For now, let's set a simple temporary password
+    tempPassword := "TempPassword123" // In production, generate a secure random password
+    
+    hashedPassword, err := bcrypt.GenerateFromPassword([]byte(tempPassword), bcrypt.DefaultCost)
+    if err != nil {
+        return fmt.Errorf("failed to hash password: %v", err)
+    }
+
+    query := `UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2`
+    _, err = m.DB.Exec(query, string(hashedPassword), userID)
+    if err != nil {
+        return fmt.Errorf("failed to update password: %v", err)
+    }
+
+    fmt.Printf("✅ UsersModel.ResetPassword - Password updated for user %d\n", userID)
+    return nil
 }
