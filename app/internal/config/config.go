@@ -10,8 +10,8 @@ type Config struct {
 	SMTPHost           string
 	SMTPPort           string
 	SMTPFrom           string
-	SMTPUsername       string // Add this
-	SMTPPassword       string // Add this
+	SMTPUsername       string 
+	SMTPPassword       string 
 }
 
 // LoadConfig loads environment variables into a Config struct
@@ -24,8 +24,8 @@ func LoadConfig() Config {
 		SMTPHost:           getEnv("SMTP_HOST", "mailpit"),
 		SMTPPort:           getEnv("SMTP_PORT", "1025"),
 		SMTPFrom:           getEnv("SMTP_FROM", "noreply@example.com"),
-		SMTPUsername:       getEnv("SMTP_USERNAME", ""), // Add this
-		SMTPPassword:       getEnv("SMTP_PASSWORD", ""), // Add this
+		SMTPUsername:       getEnv("SMTP_USERNAME", ""),
+		SMTPPassword:       getEnv("SMTP_PASSWORD", ""), 
 	}
 }
 
